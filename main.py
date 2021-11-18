@@ -6,18 +6,29 @@ import os
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+from math import ceil
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 import tensorflow as tf
 
 # Módulos próprios
-import models, utils
+import networks, utils
 
 #%% Weights & Biases
 
 import wandb
-wandb.init(project='pix2pix_cyclegan', entity='vinyluis', mode="disabled")
-# wandb.init(project='pix2pix_cyclegan', entity='vinyluis', mode="online")
+
+# Define o projeto. Como são abordagens diferentes, dois projetos diferentes foram criados no wandb
+# Possíveis: 'cyclegan' e 'pix2pix'
+wandb_project = 'pix2pix'
+
+# Valida o projeto
+if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
+    raise utils.ProjectError(wandb_project)
+
+# wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
+wandb.init(project=wandb_project, entity='vinyluis', mode="online")
+
 
 #%% CONFIG TENSORFLOW
 
@@ -52,42 +63,32 @@ config.IMG_SHAPE = [config.IMG_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS]
 config.LAMBDA_CYCLEGAN = 10 # Controle da proporção das losses de consistência de ciclo e identidade
 config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adversária do gerador
 config.FIRST_EPOCH = 1
-config.EPOCHS = 10
+config.EPOCHS = 2
 config.USE_ID_LOSS = True
 config.LEARNING_RATE = 1e-4
 config.ADAM_BETA_1 = 0.5
-config.BUFFER_SIZE = 200
-config.BATCH_SIZE = 12
-config.USE_CACHE = False
-
-'''
-Para não dar overflow de memória:
-CycleGAN Unet -> Batch = 12
-CycleGAN ResNet -> Batch = 2
-Pix2Pix Unet -> Batch = 32
-Pix2Pix ResNet -> Batch = 16
-
-Ao usar o dataset de carros, setar USE_CACHE em False
-'''
+# config.BUFFER_SIZE = 200 # Definido em código
+# config.BATCH_SIZE = 10 # Definido em código
+# config.USE_CACHE = False # Definido em código
 
 # Parâmetros de checkpoint
 config.SAVE_CHECKPOINT = True
 config.CHECKPOINT_EPOCHS = 1
 config.KEEP_CHECKPOINTS = 2
-config.LOAD_CHECKPOINT = True
+config.LOAD_CHECKPOINT = False
 config.LOAD_SPECIFIC_CHECKPOINT = False
 config.LOAD_CKPT_EPOCH = 5
+config.SAVE_MODELS = True
 
 # Configuração de validação
 config.VALIDATION = True
 config.CYCLE_TEST = True
 config.CYCLES = 10
+config.TEST_EVAL_ITERATIONS = 10
 
 # Outras configurações
-PRINT_DOT = 10
-PRINT_NEW_LINE = PRINT_DOT * 10
-NUM_TEST_PRINTS = 10
-QUIET_PLOT = True
+NUM_TEST_PRINTS = 10 # Controla quantas imagens de teste serão feitas. Com -1 plota todo o dataset de teste
+QUIET_PLOT = True # Controla se as imagens aparecerão na tela, o que impede a execução do código a depender da IDE
 
 #%% CONTROLE DA ARQUITETURA
 
@@ -98,7 +99,12 @@ config.exp = ""
 config.gen_model = 'unet'
 
 # Tipo de experimento. Possíveis = 'pix2pix', 'cyclegan'
-config.net_type = 'cyclegan'
+config.net_type = 'pix2pix'
+
+# Valida se o experimento é coerente com o projeto wandb selecionado
+if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan') 
+   or (wandb_project == 'pix2pix' and config.net_type == 'pix2pix')):
+    raise utils.ProjectMismatch(wandb_project, config.net_type)
 
 #%% PREPARA AS PASTAS
 
@@ -106,36 +112,15 @@ config.net_type = 'cyclegan'
 experiment_root = base_root + 'Experimentos/'
 experiment_folder = experiment_root + 'EXP'
 if config.exp != "":
-  experiment_folder += config.exp
+    experiment_folder += config.exp
 experiment_folder += '_'
 experiment_folder += config.net_type
 experiment_folder += '_gen_'
 experiment_folder += config.gen_model
 if config.net_type == 'cyclegan':
-  experiment_folder += '_lambda_'
-  experiment_folder += str(config.LAMBDA_CYCLEGAN)
+    experiment_folder += '_lambda_'
+    experiment_folder += str(config.LAMBDA_CYCLEGAN)
 experiment_folder += "/"
-
-### Pastas do dataset
-dataset_root = 'F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/00_Datasets/'
-
-# Datasets CycleGAN
-cars_folder = dataset_root + '60k_car_dataset_selected_edges_split/'
-simpsons_folder = dataset_root + 'simpsons_image_dataset/'
-anime_faces_folder = dataset_root + 'anime_faces_edges_split/'
-insects_folder = dataset_root + 'flickr_internetarchivebookimages_prepared/'
-
-# Datasets Pix2Pix
-cars_unpaired_folder = dataset_root + '60k_car_dataset_selected_edges/'
-
-# --- Dataset escolhido --- 
-dataset_folder = simpsons_folder
-
-# Pastas de treino e teste
-train_folder = dataset_folder + 'train'
-test_folder = dataset_folder + 'test'
-folder_suffix_A = "A/"
-folder_suffix_B = "B/"
 
 ### Pastas dos resultados
 result_folder = experiment_folder + 'results-train/'
@@ -162,8 +147,74 @@ if not os.path.exists(model_folder):
 checkpoint_dir = experiment_folder + 'checkpoints'
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 
+#%% DATASET
+
+### Pastas do dataset
+dataset_root = 'F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/00_Datasets/'
+
+# Datasets CycleGAN
+cars_folder = dataset_root + '60k_car_dataset_selected_edges_split/'
+simpsons_folder = dataset_root + 'simpsons_image_dataset/'
+anime_faces_folder = dataset_root + 'anime_faces_edges_split/'
+insects_folder = dataset_root + 'flickr_internetarchivebookimages_prepared/'
+
+# Datasets Pix2Pix
+cars_paired_folder = dataset_root + '60k_car_dataset_selected_edges/'
+
+#############################
+# --- Dataset escolhido --- #
+#############################
+dataset_folder = cars_paired_folder
+
+# Pastas de treino e teste
+train_folder = dataset_folder + 'train'
+test_folder = dataset_folder + 'test'
+folder_suffix_A = "A/"
+folder_suffix_B = "B/"
+
+#%% DEFINIÇÃO DE BATCH SIZE E CACHE
+
+'''
+Para não dar overflow de memória:
+CycleGAN Unet -> Batch = 12
+CycleGAN ResNet -> Batch = 2
+Pix2Pix Unet -> Batch = 32
+Pix2Pix ResNet -> Batch = 16
+
+Ao usar os datasets de carros, setar USE_CACHE em False
+'''
+
+# Definiçãodo BUFFER_SIZE
+config.BUFFER_SIZE = 200
+
+# Definição do BATCH_SIZE
+if config.net_type == 'cyclegan':
+    if config.gen_model == 'unet':
+        config.BATCH_SIZE = 12
+    elif config.gen_model == 'resnet':
+        config.BATCH_SIZE = 2
+    else:
+        config.BATCH_SIZE = 10
+elif config.net_type == 'pix2pix':
+    if config.gen_model == 'unet':
+        config.BATCH_SIZE = 32
+    elif config.gen_model == 'resnet':
+        config.BATCH_SIZE = 16
+    else:
+        config.BATCH_SIZE = 10
+else:
+    config.BATCH_SIZE = 10
+
+# Definição do USE_CACHE
+if dataset_folder == cars_folder or dataset_folder == cars_paired_folder:
+    config.USE_CACHE = False
+else:
+    config.USE_CACHE = True
+
 
 #%% PREPARAÇÃO DOS INPUTS
+
+print("Carregando o dataset...")
 
 # Valida os datasets usados
 if config.net_type == 'cyclegan':
@@ -172,12 +223,13 @@ if config.net_type == 'cyclegan':
         raise utils.DatasetError(config.net_type, dataset_folder)
 
 elif config.net_type == 'pix2pix':
-    if not(dataset_folder == cars_unpaired_folder):
+    if not(dataset_folder == cars_paired_folder):
         raise utils.DatasetError(config.net_type, dataset_folder)
 
 # Prepara os inputs
 if config.net_type == 'cyclegan':
     train_A = tf.data.Dataset.list_files(train_folder + folder_suffix_A + '*.jpg')
+    config.TRAIN_SIZE_A = len(list(train_A))
     train_A = train_A.map(lambda x: utils.load_image_train_cyclegan(x, config.IMG_SIZE, config.OUTPUT_CHANNELS))
     if config.USE_CACHE:
         train_A = train_A.cache()
@@ -185,6 +237,7 @@ if config.net_type == 'cyclegan':
     train_A = train_A.batch(config.BATCH_SIZE)
     
     train_B = tf.data.Dataset.list_files(train_folder + folder_suffix_B + '*.jpg')
+    config.TRAIN_SIZE_B = len(list(train_B))
     train_B = train_B.map(lambda x: utils.load_image_train_cyclegan(x, config.IMG_SIZE, config.OUTPUT_CHANNELS))
     if config.USE_CACHE:
         train_B = train_B.cache()
@@ -192,21 +245,30 @@ if config.net_type == 'cyclegan':
     train_B = train_B.batch(config.BATCH_SIZE)
 
     test_A = tf.data.Dataset.list_files(test_folder + folder_suffix_A + '*.jpg')
+    config.TEST_SIZE_A = len(list(test_A))
     test_A = test_A.map(lambda x: utils.load_image_test_cyclegan(x, config.IMG_SIZE))
     if config.USE_CACHE:
         test_A = test_A.cache()
     test_A = test_A.shuffle(config.BUFFER_SIZE)
-    test_A = test_A.batch(config.BATCH_SIZE)
+    test_A = test_A.batch(1)
     
     test_B = tf.data.Dataset.list_files(test_folder + folder_suffix_B + '*.jpg')
+    config.TEST_SIZE_B = len(list(test_B))
     test_B = test_B.map(lambda x: utils.load_image_test_cyclegan(x, config.IMG_SIZE))
     if config.USE_CACHE:
         test_B = test_B.cache()
     test_B = test_B.shuffle(config.BUFFER_SIZE)
-    test_B = test_B.batch(config.BATCH_SIZE)
+    test_B = test_B.batch(1)
+
+    print("O dataset de treino A tem {} imagens".format(config.TRAIN_SIZE_A))
+    print("O dataset de treino B tem {} imagens".format(config.TRAIN_SIZE_B))
+    print("O dataset de teste A tem {} imagens".format(config.TEST_SIZE_A))
+    print("O dataset de teste B tem {} imagens".format(config.TEST_SIZE_B))
+    print("")
 
 elif config.net_type == 'pix2pix':
     train_dataset = tf.data.Dataset.list_files(train_folder + '/*.jpg')
+    config.TRAIN_SIZE = len(list(train_dataset))
     train_dataset = train_dataset.map(lambda x: utils.load_image_train_pix2pix(x, config.IMG_SIZE, config.OUTPUT_CHANNELS))
     if config.USE_CACHE:
         train_dataset = train_dataset.cache()
@@ -214,24 +276,29 @@ elif config.net_type == 'pix2pix':
     train_dataset = train_dataset.batch(config.BATCH_SIZE)
 
     test_dataset = tf.data.Dataset.list_files(test_folder + '/*.jpg')
+    config.TEST_SIZE = len(list(test_dataset))
     test_dataset = test_dataset.map(lambda x: utils.load_image_test_pix2pix(x, config.IMG_SIZE))
     if config.USE_CACHE:
         test_dataset = test_dataset.cache()
-    test_dataset = test_dataset.batch(config.BATCH_SIZE)
+    test_dataset = test_dataset.batch(1)
+
+    print("O dataset de treino tem {} imagens".format(config.TRAIN_SIZE))
+    print("O dataset de teste tem {} imagens".format(config.TEST_SIZE))
+    print("")
 
 #%% DEFINIÇÃO DAS LOSSES
 
 # As loss de GAN serão binary cross-entropy, pois estamos tentando fazer uma classificação binária (real vs falso)
 loss_obj = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
-## LOSSES CYCLEGAN
+## LOSSES 
 
 # Loss adversária do discriminador
 def discriminator_loss(disc_real_output, disc_fake_output):
     real_loss = loss_obj(tf.ones_like(disc_real_output), disc_real_output)
     fake_loss = loss_obj(tf.zeros_like(disc_fake_output), disc_fake_output)
     total_disc_loss = real_loss + fake_loss
-    return total_disc_loss
+    return total_disc_loss, real_loss, fake_loss
 
 # Loss adversária do gerador
 def generator_loss(disc_fake_output):
@@ -292,14 +359,19 @@ def train_step_cyclegan(gen_g, gen_f, disc_x, disc_y, real_x, real_y,
 
     # Se precisar, adiciona a loss de identidade
     if config.USE_ID_LOSS:
-      same_x = gen_f(real_x, training=True)
-      same_y = gen_g(real_y, training=True)
-      total_gen_g_loss += config.LAMBDA_CYCLEGAN * 0.5 * identity_loss(real_y, same_y)
-      total_gen_f_loss += config.LAMBDA_CYCLEGAN * 0.5 * identity_loss(real_x, same_x)
+        same_x = gen_f(real_x, training=True)
+        same_y = gen_g(real_y, training=True)
+        id_loss_y = identity_loss(real_y, same_y)
+        id_loss_x = identity_loss(real_x, same_x)
+        total_gen_g_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_y
+        total_gen_f_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_x
+    else:
+        id_loss_x = 0
+        id_loss_y = 0
 
     # Calcula as losses de discriminador
-    disc_x_loss = discriminator_loss(disc_real_x, disc_fake_x)
-    disc_y_loss = discriminator_loss(disc_real_y, disc_fake_y)
+    disc_x_loss, disc_x_real_loss, disc_x_fake_loss = discriminator_loss(disc_real_x, disc_fake_x)
+    disc_y_loss, disc_y_real_loss, disc_y_fake_loss = discriminator_loss(disc_real_y, disc_fake_y)
   
   # Calcula os gradientes
   gen_g_gradients = tape.gradient(total_gen_g_loss, gen_g.trainable_variables)
@@ -315,52 +387,142 @@ def train_step_cyclegan(gen_g, gen_f, disc_x, disc_y, real_x, real_y,
   disc_x_optimizer.apply_gradients(zip(disc_x_gradients, disc_x.trainable_variables))
   disc_y_optimizer.apply_gradients(zip(disc_y_gradients, disc_y.trainable_variables))
 
+  # Cria um dicionário das losses
+  losses = {
+      'gen_g_total_train': total_gen_g_loss,
+      'gen_f_total_train': total_gen_f_loss,
+      'gen_g_gan_train': gen_g_loss,
+      'gen_f_gan_train': gen_f_loss,
+      'cycle_loss_train': total_cycle_loss,
+      'id_loss_x_train': id_loss_x,
+      'id_loss_y_train': id_loss_y,
+      'disc_x_total_train': disc_x_loss,
+      'disc_y_total_train': disc_y_loss,
+      'disc_x_real_train': disc_x_real_loss,
+      'disc_y_real_train': disc_y_real_loss,
+      'disc_x_fake_train': disc_x_fake_loss,
+      'disc_y_fake_train': disc_y_fake_loss
+  }
+
+  return losses
+
+def evaluate_test_losses_cyclegan(gen_g, gen_f, disc_x, disc_y, real_x, real_y):
+
+    # Gera as imagens falsas e as cicladas
+    fake_y = gen_g(real_x, training=True)
+    cycled_x = gen_f(fake_y, training=True)
+
+    fake_x = gen_f(real_y, training=True)
+    cycled_y = gen_g(fake_x, training=True)
+
+    # Discrimina as imagens reais
+    disc_real_x = disc_x(real_x, training=True)
+    disc_real_y = disc_y(real_y, training=True)
+
+    # Discrimina as imagens falsas
+    disc_fake_x = disc_x(fake_x, training=True)
+    disc_fake_y = disc_y(fake_y, training=True)
+
+    # Losses adversárias de gerador
+    gen_g_loss = generator_loss(disc_fake_y)
+    gen_f_loss = generator_loss(disc_fake_x)
+    
+    # Loss de ciclo
+    total_cycle_loss = cycle_loss(real_x, cycled_x) + cycle_loss(real_y, cycled_y)
+    
+    # Calcula a loss completa de gerador
+    total_gen_g_loss = gen_g_loss + config.LAMBDA_CYCLEGAN * total_cycle_loss
+    total_gen_f_loss = gen_f_loss + config.LAMBDA_CYCLEGAN * total_cycle_loss
+
+    # Se precisar, adiciona a loss de identidade
+    if config.USE_ID_LOSS:
+        same_x = gen_f(real_x, training=True)
+        same_y = gen_g(real_y, training=True)
+        id_loss_y = identity_loss(real_y, same_y)
+        id_loss_x = identity_loss(real_x, same_x)
+        total_gen_g_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_y
+        total_gen_f_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_x
+    else:
+        id_loss_x = 0
+        id_loss_y = 0
+
+    # Calcula as losses de discriminador
+    disc_x_loss, disc_x_real_loss, disc_x_fake_loss = discriminator_loss(disc_real_x, disc_fake_x)
+    disc_y_loss, disc_y_real_loss, disc_y_fake_loss = discriminator_loss(disc_real_y, disc_fake_y)
+
+    # Cria um dicionário das losses
+    losses = {
+        'gen_g_total_test': total_gen_g_loss,
+        'gen_f_total_test': total_gen_f_loss,
+        'gen_g_gan_test': gen_g_loss,
+        'gen_f_gan_test': gen_f_loss,
+        'cycle_loss_test': total_cycle_loss,
+        'id_loss_x_test': id_loss_x,
+        'id_loss_y_test': id_loss_y,
+        'disc_x_total_test': disc_x_loss,
+        'disc_y_total_test': disc_y_loss,
+        'disc_x_real_test': disc_x_real_loss,
+        'disc_y_real_test': disc_y_real_loss,
+        'disc_x_fake_test': disc_x_fake_loss,
+        'disc_y_fake_test': disc_y_fake_loss
+    }
+
+    return losses
+
 def fit_cyclegan(FIRST_EPOCH, EPOCHS, gen_g, gen_f, disc_x, disc_y,
                 gen_g_optimizer, gen_f_optimizer, disc_x_optimizer, disc_y_optimizer):
   
     print("INICIANDO TREINAMENTO")
-    t0 = time.time()
+
+    # Prepara a progression bar
+    qtd_smaller_dataset = config.TRAIN_SIZE_A if config.TRAIN_SIZE_A < config.TRAIN_SIZE_B else config.TRAIN_SIZE_B
+    progbar_iterations = int(ceil(qtd_smaller_dataset / config.BATCH_SIZE))
+    progbar = tf.keras.utils.Progbar(progbar_iterations)
+
+    # Mostra como está a geração das imagens antes do treinamento
+    utils.generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen_f, FIRST_EPOCH -1, EPOCHS, result_folder, QUIET_PLOT)
+
     for epoch in range(FIRST_EPOCH, EPOCHS+1):
         t1 = time.time()
         print("Época: ", epoch)
 
-        for example_A in test_A.take(1):
-            filename_A = "A_to_B_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-            fig = utils.generate_save_images(gen_g, example_A, result_folder, filename_A)
-            if QUIET_PLOT:
-                    plt.close(fig)
-        for example_B in test_B.take(1):
-            filename_B = "B_to_A_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-            fig = utils.generate_save_images(gen_f, example_B, result_folder, filename_B)
-            if QUIET_PLOT:
-                plt.close(fig)
-
         # Train
-        n = 0
+        n = 0 # Contador da progression bar
         for image_x, image_y in tf.data.Dataset.zip((train_A, train_B)):
-            train_step_cyclegan(gen_g, gen_f, disc_x, disc_y, image_x, image_y, 
-                                gen_g_optimizer, gen_f_optimizer, disc_x_optimizer, disc_y_optimizer)
-        
-            # Printa pontinhos
-            if (n+1) % PRINT_DOT == 0:
-                print('.', end='')
-                if (n+1) % (PRINT_NEW_LINE) == 0:
-                    print()
-            n+=1
 
+            # Faz o update da Progress Bar
+            n += 1
+            progbar.update(n)
+
+            # Passo de treino
+            losses_train = train_step_cyclegan(gen_g, gen_f, disc_x, disc_y, image_x, image_y, 
+                                               gen_g_optimizer, gen_f_optimizer, disc_x_optimizer, disc_y_optimizer)
+            
+            # Loga as losses de treino no weights and biases
+            wandb.log(utils.dict_tensor_to_numpy(losses_train))
+
+            # A cada TEST_EVAL_ITERATIONS iterações, avalia as losses para o conjunto de teste
+            if (n % config.TEST_EVAL_ITERATIONS) == 0 or n == 1 or n == progbar_iterations:
+                for img_A, img_B in zip(test_A.take(1), test_B.take(1)):
+                    losses_test = evaluate_test_losses_cyclegan(gen_g, gen_f, disc_x, disc_y, img_A, img_B)
+
+                    # Loga as losses de teste no weights and biases
+                    wandb.log(utils.dict_tensor_to_numpy(losses_test))
+
+        # Salva o checkpoint
         if config.SAVE_CHECKPOINT:
             if (epoch) % config.CHECKPOINT_EPOCHS == 0:
                 ckpt_manager.save()
                 print ('\nSalvando checkpoint da época {}'.format(epoch))
 
+        # Gera as imagens após o treinamento desta época
+        utils.generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen_f, epoch, EPOCHS, result_folder, QUIET_PLOT)
+
         dt = time.time() - t1
         print ('\nTempo usado para a época {} foi de {:.2f} min ({:.2f} sec)\n'.format(epoch, dt/60, dt))
-
-    if config.SAVE_CHECKPOINT:
-        ckpt_manager.save()
-
-    dt = time.time() - t0
-    print ('\nTempo usado para {} épocas foi de {:.2f} min ({:.2f} sec)\n'.format(EPOCHS, dt/60, dt))
+        
+        # Loga o tempo de duração da época no wandb
+        wandb.log({'epoch time (s)': dt, 'epoch time (min)': dt/60})
 
 
 # FUNÇÕES DE TREINAMENTO DA PIX2PIX
@@ -374,74 +536,117 @@ def train_step_pix2pix(gen, disc, gen_optimizer, disc_optimizer, input_img, targ
         disc_fake_output = disc([input_img, fake_img], training=True)
           
         gen_total_loss, gen_gan_loss, gen_l1_loss = generator_loss_pix2pix(disc_fake_output, fake_img, target)
-        disc_loss = discriminator_loss(disc_real_output, disc_fake_output)
+        disc_loss, disc_real_loss, disc_fake_loss = discriminator_loss(disc_real_output, disc_fake_output)
     
     generator_gradients = gen_tape.gradient(gen_total_loss, gen.trainable_variables)
     discriminator_gradients = disc_tape.gradient(disc_loss, disc.trainable_variables)
     
     gen_optimizer.apply_gradients(zip(generator_gradients, gen.trainable_variables))
     disc_optimizer.apply_gradients(zip(discriminator_gradients, disc.trainable_variables))
+
+    # Cria um dicionário das losses
+    losses = {
+        'gen_total_train': gen_total_loss,
+        'gen_gan_train': gen_gan_loss,
+        'gen_l1_train': gen_l1_loss,
+        'disc_total_train': disc_loss,
+        'disc_real_train': disc_real_loss,
+        'disc_fake_train': disc_fake_loss,
+    }
     
-    return (gen_total_loss, gen_gan_loss, gen_l1_loss, disc_loss)
+    return losses
+
+def evaluate_test_losses_pix2pix(gen, disc, input_img, target):
+        
+    fake_img = gen(input_img, training=True)
+
+    disc_real_output = disc([input_img, target], training=True)
+    disc_fake_output = disc([input_img, fake_img], training=True)
+        
+    gen_total_loss, gen_gan_loss, gen_l1_loss = generator_loss_pix2pix(disc_fake_output, fake_img, target)
+    disc_loss, disc_real_loss, disc_fake_loss = discriminator_loss(disc_real_output, disc_fake_output)
+
+    # Cria um dicionário das losses
+    losses = {
+        'gen_total_test': gen_total_loss,
+        'gen_gan_test': gen_gan_loss,
+        'gen_l1_test': gen_l1_loss,
+        'disc_total_test': disc_loss,
+        'disc_real_test': disc_real_loss,
+        'disc_fake_test': disc_fake_loss,
+    }
+    
+    return losses
 
 def fit_pix2pix(first_epoch, epochs, train_ds, test_ds, gen, disc, gen_optimizer, disc_optimizer):
     
     print("INICIANDO TREINAMENTO")
-    t0 = time.time()
+
+    # Prepara a progression bar
+    progbar_iterations = int(ceil(config.TRAIN_SIZE / config.BATCH_SIZE))
+    progbar = tf.keras.utils.Progbar(progbar_iterations)
+
+    # Mostra como está a geração das imagens antes do treinamento
+    utils.generate_sample_images_pix2pix(train_ds, test_ds, gen, first_epoch - 1, epochs, result_folder, QUIET_PLOT)
+
     for epoch in range(first_epoch, epochs+1):
         t1 = time.time()
         print("Época: ", epoch)
-
-        for example_input, example_target in test_ds.take(1):
-            filename = "epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-            fig = utils.generate_save_images_pix2pix(gen, example_input, example_target, result_folder, filename)
-            if QUIET_PLOT:
-                plt.close(fig)
         
         # Train
         for n, (input_image, target) in train_ds.enumerate():
-            train_step_pix2pix(gen, disc, gen_optimizer, disc_optimizer, input_image, target)
-            
-            # Printa pontinhos
-            if (n+1) % 100 == 0:
-                print('.', end='')
-                if (n+1) % (100*100) == 0:
-                    print()
+
+            # Faz o update da Progress Bar
+            i = n.numpy() + 1 # Ajuste porque n começa em 0
+            progbar.update(i)
+
+            # Passo de treino
+            losses_train = train_step_pix2pix(gen, disc, gen_optimizer, disc_optimizer, input_image, target)
+
+            # Loga as losses de treino no weights and biases
+            wandb.log(utils.dict_tensor_to_numpy(losses_train))
+
+            # A cada TEST_EVAL_ITERATIONS iterações, avalia as losses para o conjunto de teste
+            if (n % config.TEST_EVAL_ITERATIONS) == 0 or n == 1 or n == progbar_iterations:
+                for example_input, example_target in test_ds.take(1):
+                    losses_test = evaluate_test_losses_pix2pix(gen, disc, example_input, example_target)
+
+                    # Loga as losses de teste no weights and biases
+                    wandb.log(utils.dict_tensor_to_numpy(losses_test))
         
-        # Salva checkpoint
+        # Salva o checkpoint
         if config.SAVE_CHECKPOINT:
             if (epoch) % config.CHECKPOINT_EPOCHS == 0:
                 ckpt_manager.save()
                 print ('\nSalvando checkpoint da época {}'.format(epoch))
+
+        # Gera as imagens após o treinamento desta época
+        utils.generate_sample_images_pix2pix(train_ds, test_ds, gen, epoch, epochs, result_folder, QUIET_PLOT)
         
         dt = time.time() - t1
         print ('Tempo usado para a época {} foi de {:.2f} min ({:.2f} sec)\n'.format(epoch, dt/60, dt))
     
-    if config.SAVE_CHECKPOINT:
-        ckpt_manager.save()
-    
-    dt = time.time() - t0
-    print ('Tempo usado para {} épocas foi de {:.2f} min ({:.2f} sec)\n'.format(epoch, dt/60, dt))
-    
+        # Loga o tempo de duração da época no wandb
+        wandb.log({'epoch time (s)': dt, 'epoch time (min)': dt/60})
 
 #%% PREPARAÇÃO DOS MODELOS
 
 # ---- GERADORES
 if config.net_type == 'cyclegan':
     if config.gen_model == 'unet':
-        generator_g = models.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-        generator_f = models.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+        generator_g = networks.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+        generator_f = networks.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
     elif config.gen_model == 'resnet':
-        generator_g = models.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-        generator_f = models.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+        generator_g = networks.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+        generator_f = networks.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
     else:
         raise utils.GeneratorError(config.gen_model)
 
 elif config.net_type == 'pix2pix':
     if config.gen_model == 'unet':
-        generator = models.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+        generator = networks.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
     elif config.gen_model == 'resnet':
-        generator = models.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+        generator = networks.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
     else:
         raise utils.GeneratorError(config.gen_model)
 
@@ -451,11 +656,11 @@ else:
 
 # ---- DISCRIMINADORES
 if config.net_type == 'cyclegan':
-    discriminator_x = models.Discriminator_CycleGAN(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-    discriminator_y = models.Discriminator_CycleGAN(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    discriminator_x = networks.Discriminator_CycleGAN(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    discriminator_y = networks.Discriminator_CycleGAN(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
 
 elif config.net_type == 'pix2pix':
-    discriminator = models.Discriminator_Pix2Pix(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    discriminator = networks.Discriminator_Pix2Pix(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
 
 else:
     raise utils.ArchitectureError(config.net_type)
@@ -515,8 +720,10 @@ else:
             FIRST_EPOCH = int(latest_checkpoint.split("-")[1]) + 1
         else:
             FIRST_EPOCH = config.FIRST_EPOCH
+    else:
+        FIRST_EPOCH = config.FIRST_EPOCH
 
-#%% EXECUÇÃO
+#%% TREINAMENTO
 
 if config.net_type == 'cyclegan':
     fit_cyclegan(FIRST_EPOCH, EPOCHS, generator_g, generator_f, discriminator_x, discriminator_y,
@@ -534,35 +741,92 @@ else:
 if config.net_type == 'cyclegan':
     print("\nCriando imagens do conjunto de teste...")
 
-    # Run the trained model on the test dataset
-    c = 1
-    for inp in test_A.take(NUM_TEST_PRINTS):
-        filename = "A_to_B_test_" + str(c).zfill(len(str(NUM_TEST_PRINTS))) + ".jpg"
-        fig = utils.generate_save_images(generator_g, inp, result_test_folder, filename)
-        if QUIET_PLOT:
-            plt.close(fig)
-        c = c + 1
-        
-    # Run the trained model on the test dataset
-    c = 1
-    for inp in test_B.take(NUM_TEST_PRINTS):
-        filename = "B_to_A_test_" + str(c).zfill(len(str(NUM_TEST_PRINTS))) + ".jpg"
-        fig = utils.generate_save_images(generator_f, inp, result_test_folder, filename)
-        if QUIET_PLOT:
-            plt.close(fig)
-        c = c + 1
+    ## -- A TO B --
+    print("\nA to B")
+    t1 = time.time()
+
+    # Caso seja -1, plota tudo
+    if NUM_TEST_PRINTS < 0:
+        num_imgs = config.TEST_SIZE_A
+    else:
+        num_imgs = NUM_TEST_PRINTS
+    
+    for c, inp in test_A.enumerate():
+        # Caso seja zero, não plota nenhuma. Caso seja um número positivo, plota a quantidade descrita.
+        if NUM_TEST_PRINTS >= 0 and c >= NUM_TEST_PRINTS:
+            break
+        # Rotina de plot das imagens de teste
+        c = c.numpy()
+        onepercent = int(num_imgs / 100) if int(num_imgs / 100) !=0 else 1 # Evita Div 0
+        if c % onepercent == 0 or c == 0 or c == num_imgs:
+           print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
+        filename = "A_to_B_test_" + str(c).zfill(len(str(num_imgs))) + ".jpg"
+        utils.generate_save_images_cyclegan(generator_g, inp, result_test_folder, filename, quiet = QUIET_PLOT)
+    
+    dt = time.time() - t1
+
+    if num_imgs != 0:
+        mean_inference_time_A = dt / num_imgs
+
+    ## -- B TO A --
+    print("\nB to A")
+    t1 = time.time()
+
+    # Caso seja -1, plota tudo
+    if NUM_TEST_PRINTS < 0:
+        num_imgs = config.TEST_SIZE_B
+    else:
+        num_imgs = NUM_TEST_PRINTS
+    
+    for c, inp in test_B.enumerate():
+        # Caso seja zero, não plota nenhuma. Caso seja um número positivo, plota a quantidade descrita.
+        if NUM_TEST_PRINTS >= 0 and c >= NUM_TEST_PRINTS:
+            break
+        # Rotina de plot das imagens de teste
+        c = c.numpy()
+        onepercent = int(num_imgs / 100) if int(num_imgs / 100) !=0 else 1 # Evita Div 0
+        if c % onepercent == 0 or c == 0 or c == num_imgs:
+           print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
+        filename = "B_to_A_test_" + str(c).zfill(len(str(num_imgs))) + ".jpg"
+        utils.generate_save_images_cyclegan(generator_f, inp, result_test_folder, filename, quiet = QUIET_PLOT)
+
+    dt = time.time() - t1
+
+    if num_imgs != 0:
+        mean_inference_time_B = dt / num_imgs
+
+        # Loga os tempos de inferência no wandb
+        wandb.log({'mean inference time A (s)': mean_inference_time_A, 'mean inference time B (s)': mean_inference_time_B})
 
 elif config.net_type == 'pix2pix':
     print("\nCriando imagens do conjunto de teste...")
+    t1 = time.time()
 
-    # Run the trained model on the test dataset
-    c = 1
-    for inp in test_dataset.take(NUM_TEST_PRINTS):
-        filename = "test_" + str(c).zfill(len(str(NUM_TEST_PRINTS))) + ".jpg"
-        fig = utils.generate_save_images(generator, inp, result_test_folder, filename)
-        if QUIET_PLOT:
-            plt.close(fig)
-        c = c + 1
+    # Caso seja -1, plota tudo
+    if NUM_TEST_PRINTS < 0:
+        num_imgs = config.TEST_SIZE
+    else:
+        num_imgs = NUM_TEST_PRINTS
+
+    for c, (inp, tar) in test_dataset.enumerate():
+        # Caso seja zero, não plota nenhuma. Caso seja um número positivo, plota a quantidade descrita.
+        if NUM_TEST_PRINTS >= 0 and c >= NUM_TEST_PRINTS:
+            break
+        # Rotina de plot das imagens de teste
+        c = c.numpy()
+        onepercent = int(num_imgs / 100) if int(num_imgs / 100) !=0 else 1 # Evita Div 0
+        if c % onepercent == 0 or c == 0 or c == num_imgs:
+           print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
+        filename = "test_results_" + str(c).zfill(len(str(num_imgs))) + ".jpg"
+        utils.generate_save_images_pix2pix(generator, inp, tar, result_test_folder, filename, quiet = QUIET_PLOT)
+
+    dt = time.time() - t1
+
+    if num_imgs != 0:
+        mean_inference_time = dt / num_imgs
+
+        # Loga os tempos de inferência no wandb
+        wandb.log({'mean inference time (s)': mean_inference_time})
 
 else:
     raise utils.ArchitectureError(config.net_type)
@@ -605,9 +869,7 @@ if config.VALIDATION and config.net_type == 'cyclegan' and dataset_folder == car
         image = np.expand_dims(image, axis=0)
             
         filename = "validation_results_" + str(c).zfill(len(str(val_size))) + ".jpg"
-        fig = utils.generate_save_images(generator_g, image, validation_save_folder_A, filename)
-        if QUIET_PLOT:
-          plt.close(fig)
+        utils.generate_save_images_cyclegan(generator_g, image, validation_save_folder_A, filename, quiet = QUIET_PLOT)
         c = c + 1
     
     ## VALIDAÇÃO B TO A
@@ -625,12 +887,10 @@ if config.VALIDATION and config.net_type == 'cyclegan' and dataset_folder == car
         image = np.expand_dims(image, axis=0)
             
         filename = "validation_results_" + str(c).zfill(len(str(val_size))) + ".jpg"
-        fig = utils.generate_save_images(generator_f, image, validation_save_folder_B, filename)
-        if QUIET_PLOT:
-          plt.close(fig)
+        utils.generate_save_images_cyclegan(generator_f, image, validation_save_folder_B, filename, quiet = QUIET_PLOT)
         c = c + 1
     
-if config.VALIDATION and config.net_type == 'pix2pix' and dataset_folder == cars_unpaired_folder:
+if config.VALIDATION and config.net_type == 'pix2pix' and dataset_folder == cars_paired_folder:
 
     print("\nINICIANDO VALIDAÇÃO")
 
@@ -644,8 +904,7 @@ if config.VALIDATION and config.net_type == 'pix2pix' and dataset_folder == cars
         os.mkdir(validation_save_folder)
 
     # Encontra os arquivos:
-    from os import listdir
-    files = [f for f in listdir(validation_read_folder) if os.path.isfile(os.path.join(validation_read_folder, f))]
+    files = [f for f in os.listdir(validation_read_folder) if os.path.isfile(os.path.join(validation_read_folder, f))]
     val_size = len(files)
     print("Encontrado {0} arquivos".format(val_size))
 
@@ -655,12 +914,12 @@ if config.VALIDATION and config.net_type == 'pix2pix' and dataset_folder == cars
         print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c, val_size, 100*c/val_size))
         
         filepath = validation_read_folder + file
-        image = utils.validation_load_B(filepath)
+        image = utils.validation_load_B(filepath, config.IMG_SIZE)
 
         image = np.expand_dims(image, axis=0)
             
         filename = "validation_results_" + str(c).zfill(len(str(val_size))) + ".jpg"
-        utils.generate_save_images(generator, image, image, validation_save_folder, filename)
+        utils.generate_save_images_pix2pix(generator, image, image, validation_save_folder, filename, quiet = QUIET_PLOT)
         
         c = c + 1
 
@@ -733,3 +992,22 @@ if config.CYCLE_TEST and config.net_type == 'cyclegan':
               plt.figure()
               plt.imshow(image[0] * 0.5 + 0.5)
             tf.keras.preprocessing.image.save_img(cycle_save_folder + filename, image[0])
+
+
+#%% FINAL
+
+# Finaliza o Weights and Biases
+wandb.finish()
+
+## Salva os modelos
+if config.SAVE_MODELS:
+    print("Salvando modelos...\n")
+
+    if config.net_type == 'cyclegan':
+        generator_g.save_weights(model_folder+'generator_g.tf')
+        generator_f.save_weights(model_folder+'generator_f.tf')
+        discriminator_x.save_weights(model_folder+'discriminator_x.tf')
+        discriminator_y.save_weights(model_folder+'discriminator_y.tf')
+    elif config.net_type == 'pix2pix':
+        generator.save(model_folder+'generator.h5')
+        discriminator.save(model_folder+'discriminator.h5')

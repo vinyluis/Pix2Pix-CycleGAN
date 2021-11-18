@@ -1,13 +1,91 @@
 import cv2 as cv
 import os
 import matplotlib.pyplot as plt
+import wandb
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 import tensorflow as tf
 
 #%% FUNÇÕES DE APOIO
 
-# Funções básicas
+def dict_tensor_to_numpy(tensor_dict):
+    numpy_dict = {}
+    for k in tensor_dict.keys():
+        numpy_dict[k] = tensor_dict[k].numpy()
+    return numpy_dict
+
+def generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen_f, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
+    
+    for train_img_A, train_img_B, test_img_A, test_img_B in zip(
+        train_A.take(1), train_B.take(1), test_A.take(1), test_B.take(1)):
+
+        filename_train_A = "A_to_B_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_train_A = generate_save_images_cyclegan(gen_g, train_img_A, save_folder, filename_train_A, quiet = False)
+        
+        filename_train_B = "B_to_A_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_train_B = generate_save_images_cyclegan(gen_f, train_img_B, save_folder, filename_train_B, quiet = False)
+        
+        filename_test_A = "A_to_B_test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_test_A = generate_save_images_cyclegan(gen_g, test_img_A, save_folder, filename_test_A, quiet = False)
+        
+        filename_test_B = "B_to_A_test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_test_B = generate_save_images_cyclegan(gen_f, test_img_B, save_folder, filename_test_B, quiet = False)
+
+    if log_wandb:
+        wandb_title = "Época {}".format(epoch)
+
+        wandb_fig_train_A = wandb.Image(fig_train_A, caption="Train_A")
+        wandb_title_train_A =  wandb_title + " - Train A"
+
+        wandb_fig_train_B = wandb.Image(fig_train_B, caption="Train_B")
+        wandb_title_train_B =  wandb_title + " - Train B"
+
+        wandb_fig_test_A = wandb.Image(fig_test_A, caption="Test_A")
+        wandb_title_test_A =  wandb_title + " - Test A"
+
+        wandb_fig_test_B = wandb.Image(fig_test_B, caption="Test_B")
+        wandb_title_test_B =  wandb_title + " - Test B"
+
+        wandb.log({wandb_title_train_A: wandb_fig_train_A,
+                wandb_title_train_B: wandb_fig_train_B,
+                wandb_title_test_A: wandb_fig_test_A,
+                wandb_title_test_B: wandb_fig_test_B})
+
+    if QUIET_PLOT:
+        plt.close(fig_train_A)
+        plt.close(fig_train_B)
+        plt.close(fig_test_A)
+        plt.close(fig_test_B)
+
+def generate_sample_images_pix2pix(train_ds, test_ds, gen, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
+    
+    for train_input, train_target in train_ds.take(1):
+        filename_train = "train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_train = generate_save_images_pix2pix(gen, train_input, train_target, save_folder, filename_train, quiet = False)
+
+    for test_input, test_target in test_ds.take(1):
+        filename_test = "test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_test = generate_save_images_pix2pix(gen, test_input, test_target, save_folder, filename_test, quiet = False)
+
+    if log_wandb:
+        wandb_title = "Época {}".format(epoch)
+
+        wandb_fig_train = wandb.Image(fig_train, caption="Train")
+        wandb_title_train =  wandb_title + " - Train"
+
+        wandb_fig_test = wandb.Image(fig_test, caption="Test")
+        wandb_title_test =  wandb_title + " - Test"
+
+        wandb.log({wandb_title_train: wandb_fig_train,
+                wandb_title_test: wandb_fig_test})
+
+    if QUIET_PLOT:
+        plt.close(fig_train)
+        plt.close(fig_test)
+
+#%% FUNÇÕES DO DATASET
+
+# Funções Básicas
 
 def normalize(image):
   # normalizing the images to [-1, 1]
@@ -113,12 +191,12 @@ def load_image_test_pix2pix(image_file, img_size):
 
 # Geração de imagens
 
-def generate_images(generator, test_input):
-  prediction = generator(test_input)
+def generate_images_cyclegan(generator, input, quiet = True):
+  prediction = generator(input)
     
-  f = plt.figure(figsize=(12, 12))
+  f = plt.figure(figsize=(12, 3))
 
-  display_list = [test_input[0], prediction[0]]
+  display_list = [input[0], prediction[0]]
   title = ['Input Image', 'Predicted Image']
 
   for i in range(2):
@@ -127,16 +205,19 @@ def generate_images(generator, test_input):
     # getting the pixel values between [0, 1] to plot it.
     plt.imshow(display_list[i] * 0.5 + 0.5)
     plt.axis('off')
-  f.show()
-
-  return f
   
-def generate_save_images(generator, test_input, save_destination, filename):
-  prediction = generator(test_input)
-    
-  f = plt.figure(figsize=(12, 12))
+  if not quiet:
+        f.show()
+        return f
+  else:
+        plt.close(f)
 
-  display_list = [test_input[0], prediction[0]]
+def generate_save_images_cyclegan(generator, input, save_destination, filename, quiet = True):
+  prediction = generator(input)
+    
+  f = plt.figure(figsize=(12, 3))
+
+  display_list = [input[0], prediction[0]]
   title = ['Input Image', 'Predicted Image']
 
   for i in range(2):
@@ -145,17 +226,21 @@ def generate_save_images(generator, test_input, save_destination, filename):
     # getting the pixel values between [0, 1] to plot it.
     plt.imshow(display_list[i] * 0.5 + 0.5)
     plt.axis('off')
-  f.show()
+  plt.tight_layout()
   
   f.savefig(save_destination + filename)
 
-  return f
+  if not quiet:
+        f.show()
+        return f
+  else:
+        plt.close(f)
 
-def generate_images_pix2pix(generator, test_input, tar):
-    prediction = generator(test_input, training=True)
-    f = plt.figure(figsize=(15,15))
+def generate_images_pix2pix(generator, input, tar, quiet = True):
+    prediction = generator(input, training=True)
+    f = plt.figure(figsize=(12, 3))
     
-    display_list = [test_input[0], tar[0], prediction[0]]
+    display_list = [input[0], tar[0], prediction[0]]
     title = ['Input Image', 'Ground Truth', 'Predicted Image']
     
     for i in range(3):
@@ -164,15 +249,18 @@ def generate_images_pix2pix(generator, test_input, tar):
         # getting the pixel values between [0, 1] to plot it.
         plt.imshow(display_list[i] * 0.5 + 0.5)
         plt.axis('off')
-    f.show()
-
-    return f
+    
+    if not quiet:
+        f.show()
+        return f
+    else:
+        plt.close(f)
      
-def generate_save_images_pix2pix(generator, test_input, tar, save_destination, filename):
-    prediction = generator(test_input, training=True)
-    f = plt.figure(figsize=(15,15))
+def generate_save_images_pix2pix(generator, input, tar, save_destination, filename, quiet = True):
+    prediction = generator(input, training=True)
+    f = plt.figure(figsize=(12, 3))
     
-    display_list = [test_input[0], tar[0], prediction[0]]
+    display_list = [input[0], tar[0], prediction[0]]
     title = ['Input Image', 'Ground Truth', 'Predicted Image']
     
     for i in range(3):
@@ -181,13 +269,17 @@ def generate_save_images_pix2pix(generator, test_input, tar, save_destination, f
         # getting the pixel values between [0, 1] to plot it.
         plt.imshow(display_list[i] * 0.5 + 0.5)
         plt.axis('off')
-    f.show()
     
     f.savefig(save_destination + filename)
 
-    return f
-    
-# Funções para a validação
+    if not quiet:
+        f.show()
+        return f
+    else:
+        plt.close(f)
+
+
+#%% FUNÇÕES DA VALIDAÇÃO
 
 def CannyEdges(img, threshold = 200/3, ratio = 3, kernel_size = 3):
     img_blur = cv.blur(img, (3,3))
@@ -202,8 +294,8 @@ def ResizeAspectRatio(img, img_size, fit = 'larger'):
     # fit = o lado que terá o tamanho definido é o maior ou o menor. default = larger
     
     # Resize mantendo o aspect ratio
-    width = img.shape[0]
-    height = img.shape[1]
+    width = img.shape[1]
+    height = img.shape[0]
     
     # Se for larger, faz com que o lado maior seja igual img_size
     if fit == 'larger':
@@ -223,8 +315,7 @@ def ResizeAspectRatio(img, img_size, fit = 'larger'):
             new_h = img_size
             new_w = int(width * new_h / height)
 
-        
-    dim = (new_h, new_w)
+    dim = (new_w, new_h)
     resized = tf.image.resize(img, dim, method = 'bicubic') 
     
     return resized
@@ -234,9 +325,9 @@ def ResizedSquare(img, img_size, background = 'white'):
     # Faz o resize mantendo o aspect ratio
     img = ResizeAspectRatio(img, img_size)
     
-    # Pega as informações da imagem
-    img_shape = tf.shape(img)
-    w, h = img_shape[0], img_shape[1]
+    # Pega as dimensões da imagem
+    w = img.shape[1]
+    h = img.shape[0]
 
     # Transforma a imagem num quadrado preenchendo o excesso com a cor branca
     paddings = tf.constant([[int((img_size - w)/2), int((img_size - w)/2)], 
@@ -277,6 +368,14 @@ def validation_load_B(image_file, img_size):
 
 #%% TRATAMENTO DE EXCEÇÕES
     
+class ProjectError(Exception):
+    def __init__(self, project):
+        print("O projeto " + project + " não está definido")
+
+class ProjectMismatch(Exception):
+    def __init__(self, project, net_type):
+        print("O projeto " + project + " não pode ser usado com a rede " + net_type)
+
 class GeneratorError(Exception):
     def __init__(self, gen_model):
         print("O gerador " + gen_model + " é desconhecido")
