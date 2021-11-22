@@ -12,7 +12,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow
 import tensorflow as tf
 
 # Módulos próprios
-import networks, utils
+import networks, utils, metrics
 
 #%% Weights & Biases
 
@@ -26,8 +26,8 @@ wandb_project = 'pix2pix'
 if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
     raise utils.ProjectError(wandb_project)
 
-# wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
-wandb.init(project=wandb_project, entity='vinyluis', mode="online")
+wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
+# wandb.init(project=wandb_project, entity='vinyluis', mode="online")
 
 
 #%% CONFIG TENSORFLOW
@@ -63,7 +63,7 @@ config.IMG_SHAPE = [config.IMG_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS]
 config.LAMBDA_CYCLEGAN = 10 # Controle da proporção das losses de consistência de ciclo e identidade
 config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adversária do gerador
 config.FIRST_EPOCH = 1
-config.EPOCHS = 2
+config.EPOCHS = 5
 config.USE_ID_LOSS = True
 config.LEARNING_RATE = 1e-4
 config.ADAM_BETA_1 = 0.5
@@ -71,14 +71,26 @@ config.ADAM_BETA_1 = 0.5
 # config.BATCH_SIZE = 10 # Definido em código
 # config.USE_CACHE = False # Definido em código
 
+# Parâmetros das métricas
+"""
+TALVEZ SEJA IMPORTANTE FAZER METRIC_SAMPLE_SIZE VARIAR
+DE ACORDO COM O TAMANHO DO DATASET (TALVEZ USAR % ?)
+"""
+config.METRIC_SAMPLE_SIZE = 10 # Quantos batches pega para a avaliação
+config.EVALUATE_IS = True
+config.EVALUATE_FID = True
+config.EVALUATE_L1 = True
+config.EVALUATE_ACC = True
+config.EVALUATE_EPOCH_END = True
+
 # Parâmetros de checkpoint
 config.SAVE_CHECKPOINT = True
 config.CHECKPOINT_EPOCHS = 1
-config.KEEP_CHECKPOINTS = 2
-config.LOAD_CHECKPOINT = False
+config.KEEP_CHECKPOINTS = 1
+config.LOAD_CHECKPOINT = True
 config.LOAD_SPECIFIC_CHECKPOINT = False
 config.LOAD_CKPT_EPOCH = 5
-config.SAVE_MODELS = True
+config.SAVE_MODELS = False
 
 # Configuração de validação
 config.VALIDATION = True
@@ -160,11 +172,12 @@ insects_folder = dataset_root + 'flickr_internetarchivebookimages_prepared/'
 
 # Datasets Pix2Pix
 cars_paired_folder = dataset_root + '60k_car_dataset_selected_edges/'
+cars_paired_folder_complete = dataset_root + '60k_car_dataset_edges/'
 
 #############################
 # --- Dataset escolhido --- #
 #############################
-dataset_folder = cars_paired_folder
+dataset_folder = cars_paired_folder_complete
 
 # Pastas de treino e teste
 train_folder = dataset_folder + 'train'
@@ -206,7 +219,7 @@ else:
     config.BATCH_SIZE = 10
 
 # Definição do USE_CACHE
-if dataset_folder == cars_folder or dataset_folder == cars_paired_folder:
+if dataset_folder == cars_folder or dataset_folder == cars_paired_folder or dataset_folder == cars_paired_folder_complete:
     config.USE_CACHE = False
 else:
     config.USE_CACHE = True
@@ -223,7 +236,7 @@ if config.net_type == 'cyclegan':
         raise utils.DatasetError(config.net_type, dataset_folder)
 
 elif config.net_type == 'pix2pix':
-    if not(dataset_folder == cars_paired_folder):
+    if not(dataset_folder == cars_paired_folder or dataset_folder == cars_paired_folder_complete):
         raise utils.DatasetError(config.net_type, dataset_folder)
 
 # Prepara os inputs
@@ -479,8 +492,13 @@ def fit_cyclegan(FIRST_EPOCH, EPOCHS, gen_g, gen_f, disc_x, disc_y,
     progbar_iterations = int(ceil(qtd_smaller_dataset / config.BATCH_SIZE))
     progbar = tf.keras.utils.Progbar(progbar_iterations)
 
+    # Separa imagens fixas para acompanhar o treinamento
+    for train_img_A, train_img_B, test_img_A, test_img_B in zip(
+        train_A.take(1), train_B.take(1), test_A.take(1), test_B.take(1)):
+        pass
+
     # Mostra como está a geração das imagens antes do treinamento
-    utils.generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen_f, FIRST_EPOCH -1, EPOCHS, result_folder, QUIET_PLOT)
+    utils.generate_fixed_images_cyclegan(train_img_A, train_img_B, test_img_A, test_img_B, gen_g, gen_f, FIRST_EPOCH -1, EPOCHS, result_folder, QUIET_PLOT)
 
     for epoch in range(FIRST_EPOCH, EPOCHS+1):
         t1 = time.time()
@@ -516,7 +534,26 @@ def fit_cyclegan(FIRST_EPOCH, EPOCHS, gen_g, gen_f, disc_x, disc_y,
                 print ('\nSalvando checkpoint da época {}'.format(epoch))
 
         # Gera as imagens após o treinamento desta época
-        utils.generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen_f, epoch, EPOCHS, result_folder, QUIET_PLOT)
+        utils.generate_fixed_images_cyclegan(train_img_A, train_img_B, test_img_A, test_img_B, gen_g, gen_f, epoch, EPOCHS, result_folder, QUIET_PLOT)
+
+        ### AVALIAÇÃO DAS MÉTRICAS DE QUALIDADE ###
+        print("Avaliação das métricas de qualidade")
+
+        # Avaliação para as imagens de treino
+        train_sample_A = train_A.take(config.METRIC_SAMPLE_SIZE)
+        train_sample_B = train_B.take(config.METRIC_SAMPLE_SIZE)
+        metric_results = metrics.evaluate_metrics_cyclegan(train_sample_A, train_sample_B, generator_g, generator_f, discriminator_x, discriminator_y,
+							                               config.EVALUATE_IS, config.EVALUATE_FID, config.EVALUATE_ACC)
+        train_metrics = {k+"_train": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "_train" no final das keys
+        wandb.log(train_metrics)
+
+        # Avaliação para as imagens de teste
+        test_sample_A = train_A.take(config.METRIC_SAMPLE_SIZE)
+        test_sample_B = train_B.take(config.METRIC_SAMPLE_SIZE)
+        metric_results = metrics.evaluate_metrics_cyclegan(test_sample_A, test_sample_B, generator_g, generator_f, discriminator_x, discriminator_y,
+							                               config.EVALUATE_IS, config.EVALUATE_FID, config.EVALUATE_ACC)
+        test_metrics = {k+"_test": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "_test" no final das keys
+        wandb.log(test_metrics)
 
         dt = time.time() - t1
         print ('\nTempo usado para a época {} foi de {:.2f} min ({:.2f} sec)\n'.format(epoch, dt/60, dt))
@@ -586,8 +623,14 @@ def fit_pix2pix(first_epoch, epochs, train_ds, test_ds, gen, disc, gen_optimizer
     progbar_iterations = int(ceil(config.TRAIN_SIZE / config.BATCH_SIZE))
     progbar = tf.keras.utils.Progbar(progbar_iterations)
 
+    # Separa imagens fixas para acompanhar o treinamento
+    for train_input, train_target in train_ds.take(1):
+        fixed_train = (train_input, train_target)
+    for test_input, test_target in test_ds.take(1):
+        fixed_test = (test_input,  test_target)
+
     # Mostra como está a geração das imagens antes do treinamento
-    utils.generate_sample_images_pix2pix(train_ds, test_ds, gen, first_epoch - 1, epochs, result_folder, QUIET_PLOT)
+    utils.generate_fixed_images_pix2pix(fixed_train, fixed_test, gen, first_epoch - 1, EPOCHS, result_folder, QUIET_PLOT)
 
     for epoch in range(first_epoch, epochs+1):
         t1 = time.time()
@@ -621,13 +664,29 @@ def fit_pix2pix(first_epoch, epochs, train_ds, test_ds, gen, disc, gen_optimizer
                 print ('\nSalvando checkpoint da época {}'.format(epoch))
 
         # Gera as imagens após o treinamento desta época
-        utils.generate_sample_images_pix2pix(train_ds, test_ds, gen, epoch, epochs, result_folder, QUIET_PLOT)
+        utils.generate_fixed_images_pix2pix(fixed_train, fixed_test, gen, epoch, EPOCHS, result_folder, QUIET_PLOT)
         
+        ### AVALIAÇÃO DAS MÉTRICAS DE QUALIDADE ###
+        print("Avaliação das métricas de qualidade")
+
+        # Avaliação para as imagens de treino
+        train_sample = train_dataset.take(config.METRIC_SAMPLE_SIZE)
+        metric_results = metrics.evaluate_metrics_pix2pix(train_sample, generator, discriminator, config.EVALUATE_IS, config.EVALUATE_FID, config.EVALUATE_L1, config.EVALUATE_ACC)
+        train_metrics = {k+"_train": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "train" no final das keys
+        wandb.log(train_metrics)
+
+        # Avaliação para as imagens de teste
+        test_sample = test_dataset.unbatch().batch(config.BATCH_SIZE).take(config.METRIC_SAMPLE_SIZE) # Corrige para ter o mesmo batch_size do train_dataset
+        metric_results = metrics.evaluate_metrics_pix2pix(test_sample, generator, discriminator, config.EVALUATE_IS, config.EVALUATE_FID, config.EVALUATE_L1, config.EVALUATE_ACC)
+        test_metrics = {k+"_test": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "test" no final das keys
+        wandb.log(test_metrics)
+
         dt = time.time() - t1
         print ('Tempo usado para a época {} foi de {:.2f} min ({:.2f} sec)\n'.format(epoch, dt/60, dt))
-    
+
         # Loga o tempo de duração da época no wandb
         wandb.log({'epoch time (s)': dt, 'epoch time (min)': dt/60})
+
 
 #%% PREPARAÇÃO DOS MODELOS
 
@@ -734,7 +793,6 @@ elif config.net_type == 'pix2pix':
 
 else:
     raise utils.ArchitectureError(config.net_type)
-
 
 #%% TESTE
 
