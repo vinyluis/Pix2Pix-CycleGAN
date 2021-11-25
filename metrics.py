@@ -4,12 +4,14 @@ import numpy as np
 
 from scipy.linalg import sqrtm
 from sklearn.metrics import accuracy_score as accuracy
+from tensorflow.python.framework.tensor_shape import as_dimension
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 import tensorflow as tf
 from tensorflow.keras.applications.inception_v3 import InceptionV3
 
 import utils
+
 
 #%% PREPARAÇÃO
 
@@ -19,18 +21,14 @@ model_IS = InceptionV3()
 # Prepara o modelo Inception v3 para o FID
 model_FID = InceptionV3(include_top=False, pooling='avg', input_shape=(299,299,3))
 
-
 #%% FUNÇÕES BASE
 
-def evaluate_metrics_cyclegan(sample_ds_A, sample_ds_B, generator_g, generator_f, discriminator_x, discriminator_y,
-							  evaluate_is, evaluate_fid, evaluate_acc, verbose = False):
+def evaluate_metrics_cyclegan(sample_ds_A, sample_ds_B, generator_g, generator_f, evaluate_is, evaluate_fid, verbose = False):
 	t1 = time.time()
 	inception_score_A = []
 	inception_score_B = []
 	frechet_inception_distance_A = []
 	frechet_inception_distance_B = []
-	accuracies_A = []
-	accuracies_B = []
 	c = 0
 	for input_A, input_B in tf.data.Dataset.zip((sample_ds_A, sample_ds_B)):
 		
@@ -63,16 +61,6 @@ def evaluate_metrics_cyclegan(sample_ds_A, sample_ds_B, generator_g, generator_f
 					print("FID (A) = {:.2f}".format(fid_score_A))
 					print("FID (B) = {:.2f}".format(fid_score_B))
 
-			# Cálculos da Acurácia dos discriminadores
-			if evaluate_acc:
-				acc_A = evaluate_disc_accuracy_cyclegan(discriminator_x, input_A, fake_A)
-				acc_B = evaluate_disc_accuracy_cyclegan(discriminator_y, input_B, fake_B)
-				accuracies_A.append(acc_A)
-				accuracies_B.append(acc_B)
-				if verbose: 
-					print("ACC (A) = {:.2f}".format(acc_A))
-					print("ACC (B) = {:.2f}".format(acc_B))
-
 		except:
 			if verbose:
 				print("Erro na {}-ésima iteração. Pulando.".format(c))
@@ -96,13 +84,6 @@ def evaluate_metrics_cyclegan(sample_ds_A, sample_ds_B, generator_g, generator_f
 		fid_avg_B, fid_std_B = np.mean(frechet_inception_distance_B), np.std(frechet_inception_distance_B)
 		results['fid_avg_B'] = fid_avg_B
 		results['fid_std_B'] = fid_std_B
-	if evaluate_acc:
-		acc_avg_A, acc_std_A = np.mean(accuracies_A), np.std(accuracies_A)
-		results['acc_avg_A'] = acc_avg_A
-		results['acc_std_A'] = acc_std_A
-		acc_avg_B, acc_std_B = np.mean(accuracies_B), np.std(accuracies_B)
-		results['acc_avg_B'] = acc_avg_B
-		results['acc_std_B'] = acc_std_B
 
 	# Reporta o resultado
 	if verbose:
@@ -112,21 +93,17 @@ def evaluate_metrics_cyclegan(sample_ds_A, sample_ds_B, generator_g, generator_f
 		if evaluate_fid:
 			print("Fréchet Inception Distance A:\nMédia: {:.2f}\nDesv Pad: {:.2f}\n".format(fid_avg_A, fid_std_A))
 			print("Fréchet Inception Distance B:\nMédia: {:.2f}\nDesv Pad: {:.2f}\n".format(fid_avg_B, fid_std_B))
-		if evaluate_acc:
-			print("Discriminator Accuracy A:\nMédia: {:.2f}\nDesv Pad: {:.2f}\n".format(acc_avg_A, acc_std_A))
-			print("Discriminator Accuracy B:\nMédia: {:.2f}\nDesv Pad: {:.2f}\n".format(acc_avg_B, acc_std_B))
 
 	dt = time.time() - t1
 	results['eval_time'] = dt
 
 	return results
 
-def evaluate_metrics_pix2pix(sample_ds, generator, discriminator, evaluate_is, evaluate_fid, evaluate_l1, evaluate_acc, verbose = False):
+def evaluate_metrics_pix2pix(sample_ds, generator, evaluate_is, evaluate_fid, evaluate_l1, verbose = False):
 	t1 = time.time()
 	inception_score = []
 	frechet_inception_distance = []
 	l1_distance = []
-	accuracies = []
 	c = 0
 	for input_img, target in sample_ds:
 		
@@ -159,13 +136,6 @@ def evaluate_metrics_pix2pix(sample_ds, generator, discriminator, evaluate_is, e
 				if verbose: 
 					print("L1 = {:.2f}".format(l1_score))
 
-			# Acurácia do Discriminador
-			if evaluate_acc:
-				acc = evaluate_disc_accuracy_pix2pix(discriminator, fake, target)
-				accuracies.append(acc)
-				if verbose: 
-					print("ACC = {:.2f}".format(acc))
-
 		except:
 			if verbose:
 				print("Erro na {}-ésima iteração. Pulando.".format(c))
@@ -187,10 +157,6 @@ def evaluate_metrics_pix2pix(sample_ds, generator, discriminator, evaluate_is, e
 		l1_avg, l1_std = np.mean(l1_distance), np.std(l1_distance)
 		results['l1_avg'] = l1_avg
 		results['l1_std'] = l1_std
-	if evaluate_acc:
-		acc_avg, acc_std = np.mean(accuracies), np.std(accuracies)
-		results['acc_avg'] = acc_avg
-		results['acc_std'] = acc_std
 
 	# Reporta o resultado
 	if verbose:
@@ -200,8 +166,6 @@ def evaluate_metrics_pix2pix(sample_ds, generator, discriminator, evaluate_is, e
 			print("Fréchet Inception Distance:\nMédia: {:.2f}\nDesv Pad: {:.2f}\n".format(fid_avg, fid_std))
 		if evaluate_l1:
 			print("L1 Distance:\nMédia: {:.2f}\nDesv Pad: {:.2f}\n".format(l1_avg, l1_std))
-		if evaluate_acc:
-			print("Discriminator Accuracy:\nMédia: {:.2f}\nDesv Pad: {:.2f}\n".format(acc_avg, acc_std))
 
 	dt = time.time() - t1
 	results['eval_time'] = dt
@@ -279,74 +243,145 @@ def get_l1_distance(image1, image2):
 
 	return l1_dist
 
-# Acurácia do Discriminador - Pix2Pix
-def evaluate_disc_accuracy_pix2pix(disc, fake_image, target):
+# Avaliação de acurácia do discriminador - Pix2Pix
+def evaluate_accuracy_pix2pix(gen, disc, test_ds, y_real, y_pred, window = 100):
     
+    # Gera uma imagem-base
+    for img_real, target in test_ds.take(1):
+
+        # A partir dela, gera uma imagem sintética
+        img_fake = gen(img_real, training = True)
+
+        # Avalia ambas
+        disc_real = disc([img_real, target], training = True)
+        disc_fake = disc([img_fake, target], training = True)
+
+        # Para o caso de ser um discriminador PatchGAN, tira a média
+        disc_real = np.mean(disc_real)
+        disc_fake = np.mean(disc_fake)
+
+        # Aplica o threshold
+        disc_real = 1 if disc_real > 0.5 else 0
+        disc_fake = 1 if disc_fake > 0.5 else 0
+
+        # Acrescenta a observação real como y_real = 1
+        y_real.append(1)
+        y_pred.append(disc_real)
+
+        # Acrescenta a observação fake como y_real = 0
+        y_real.append(0)
+        y_pred.append(disc_fake)
+        
+        # Calcula a acurácia pela janela
+        if len(y_real) > window:
+            acc = accuracy(y_real[-window:], y_pred[-window:])    
+        else:
+            acc = accuracy(y_real, y_pred)
+
+        return y_real, y_pred, acc
+
+# Avaliação de acurácia do discriminador - Pix2Pix
+def evaluate_accuracy_cyclegan(gen, disc, test_ds, y_real, y_pred, window = 100):
+
 	'''
-	Calcula a acurácia do discriminador
+	Lembrando:
+	Gerador G: A->B
+	Gerador F: B->A
+	Discriminador A: Discrimina A
+	Discriminador B: Discrimina B
 	'''
 
-	# Realiza as discriminações
-	disc_real = disc([target, target])
-	disc_fake = disc([fake_image, target])
+	# Gera uma imagem-base
+	for img_real in test_ds.take(1):
 
-	# Para o caso de ser um discriminador PatchGAN, tira a média
-	disc_real = np.mean(disc_real)
-	disc_fake = np.mean(disc_fake)
+		# A partir dela, gera uma imagem sintética
+		img_fake = gen(img_real, training = True)
 
-	# Aplica o threshold
-	disc_real = 1 if disc_real > 0.5 else 0
-	disc_fake = 1 if disc_fake > 0.5 else 0
+		# Avalia ambas
+		disc_real = disc(img_real, training = True)
+		disc_fake = disc(img_fake, training = True)
 
-	# Prepara as listas para poder realizar o cálculo da acurácia
-	y_real = []
-	y_pred = []
+		# Para o caso de ser um discriminador PatchGAN, tira a média
+		disc_real = np.mean(disc_real)
+		disc_fake = np.mean(disc_fake)
 
-	# Acrescenta a observação real como y_real = 1
-	y_real.append(1)
-	y_pred.append(disc_real)
+		# Aplica o threshold
+		disc_real = 1 if disc_real > 0.5 else 0
+		disc_fake = 1 if disc_fake > 0.5 else 0
 
-	# Acrescenta a observação fake como y_real = 0
-	y_real.append(0)
-	y_pred.append(disc_fake)
+		# Acrescenta a observação real como y_real = 1
+		y_real.append(1)
+		y_pred.append(disc_real)
 
-	# Calcula a acurácia
-	acc = accuracy(y_real, y_pred)
+		# Acrescenta a observação fake como y_real = 0
+		y_real.append(0)
+		y_pred.append(disc_fake)
+		
+		# Calcula a acurácia pela janela
+		if len(y_real) > window:
+			acc = accuracy(y_real[-window:], y_pred[-window:])    
+		else:
+			acc = accuracy(y_real, y_pred)
 
-	return acc
+		return y_real, y_pred, acc
 
-# Acurácia do Discriminador - CycleGAN
-def evaluate_disc_accuracy_cyclegan(disc, real_image, fake_image):
-    
+
+#%% VALIDATION
+
+if __name__  == "__main__":
+
+	# LOAD IMAGES
+	filepath1 = 'validation_images_car_cycle/ClassA/car_validation (1).jpg'
+	image1_raw = utils.validation_load_B(filepath1, 256) # Load image
+	image1_raw  = np.random.uniform(low = -1, high = 1, size = image1_raw.shape) + image1_raw # Add noise
+	image1 = np.expand_dims(image1_raw, axis=0) # Add a dimension for batch
+	
+	filepath2 = 'validation_images_car_cycle/ClassA/car_validation (2).jpg'
+	image2_raw = utils.validation_load_B(filepath2, 256) # Load image
+	image2_raw  = np.random.uniform(low = -1, high = 1, size = image2_raw.shape) + image2_raw # Add noise
+	image2 = np.expand_dims(image2_raw, axis=0) # Add a dimension for batch
+
+	filepath3 = 'validation_images_car_cycle/ClassA/car_validation (3).jpg'
+	image3_raw = utils.validation_load_B(filepath3, 256) # Load image
+	image3_raw  = np.random.uniform(low = -1, high = 1, size = image3_raw.shape) + image3_raw # Add noise
+	image3 = np.expand_dims(image3_raw, axis=0) # Add a dimension for batch
+	
+	filepath4 = 'validation_images_car_cycle/ClassA/car_validation (4).jpg'
+	image4_raw = utils.validation_load_B(filepath4, 256) # Load image
+	image4_raw  = np.random.uniform(low = -1, high = 1, size = image4_raw.shape) + image4_raw # Add noise
+	image4 = np.expand_dims(image4_raw, axis=0) # Add a dimension for batch
+
+	concat1 = tf.concat([image1, image2], 0)
+	concat2 = tf.concat([image3, image4], 0)
+	concat_all = tf.concat([image1, image2, image3, image4], 0)
+
+	# PRINT IMAGES (IF SO)
 	'''
-	Calcula a acurácia do discriminador
+	import matplotlib.pyplot as plt
+	plt.imshow(image1_raw * 0.5 + 0.5) # getting the pixel values between [0, 1] to plot it.
+	plt.show()
+	plt.figure()
+	plt.imshow(image2_raw * 0.5 + 0.5) # getting the pixel values between [0, 1] to plot it.
+	plt.show()
 	'''
 
-	# Realiza as discriminações
-	disc_real = disc(real_image)
-	disc_fake = disc(fake_image)
+	# INCEPTION SCORE
+	t = time.time()
+	is_score = get_inception_score(concat_all)
+	print("IS = {:.2f}".format(is_score))
+	dt_np = time.time() - t
+	print("A avaliação do IS com Numpy levou {:.2f} s".format(dt_np))
 
-	# Para o caso de ser um discriminador PatchGAN, tira a média
-	disc_real = np.mean(disc_real)
-	disc_fake = np.mean(disc_fake)
+	# FRECHET INCEPTION DISTANCE
+	t = time.time()
+	fid_score = get_frechet_inception_distance(concat1, concat2)
+	print("FID = {:.2f}".format(fid_score))
+	dt_np = time.time() - t
+	print("A avaliação do FID com Numpy levou {:.2f} s".format(dt_np))
 
-	# Aplica o threshold
-	disc_real = 1 if disc_real > 0.5 else 0
-	disc_fake = 1 if disc_fake > 0.5 else 0
-
-	# Prepara as listas para poder realizar o cálculo da acurácia
-	y_real = []
-	y_pred = []
-
-	# Acrescenta a observação real como y_real = 1
-	y_real.append(1)
-	y_pred.append(disc_real)
-
-	# Acrescenta a observação fake como y_real = 0
-	y_real.append(0)
-	y_pred.append(disc_fake)
-
-	# Calcula a acurácia
-	acc = accuracy(y_real, y_pred)
-
-	return acc
+	# L1
+	t = time.time()
+	l1 = get_l1_distance(concat1, concat2)
+	print("L1 = {:.2f}".format(l1))
+	dt_np = time.time() - t
+	print("A avaliação do L1 com TF levou {:.2f} s".format(dt_np))

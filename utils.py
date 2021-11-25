@@ -11,7 +11,10 @@ import tensorflow as tf
 def dict_tensor_to_numpy(tensor_dict):
     numpy_dict = {}
     for k in tensor_dict.keys():
-        numpy_dict[k] = tensor_dict[k].numpy()
+        try:
+            numpy_dict[k] = tensor_dict[k].numpy()
+        except:
+            numpy_dict[k] = tensor_dict[k]
     return numpy_dict
 
 def generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen_f, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
