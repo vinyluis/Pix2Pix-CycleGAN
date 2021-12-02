@@ -17,10 +17,10 @@ def dict_tensor_to_numpy(tensor_dict):
             numpy_dict[k] = tensor_dict[k]
     return numpy_dict
 
-def generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen_f, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
+def generate_sample_images_cyclegan(train_A, train_B, val_A, val_B, gen_g, gen_f, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
     
-    for train_img_A, train_img_B, test_img_A, test_img_B in zip(
-        train_A.take(1), train_B.take(1), test_A.take(1), test_B.take(1)):
+    for train_img_A, train_img_B, val_img_A, val_img_B in zip(
+        train_A.take(1), train_B.take(1), val_A.take(1), val_B.take(1)):
 
         filename_train_A = "A_to_B_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
         fig_train_A = generate_save_images_cyclegan(gen_g, train_img_A, save_folder, filename_train_A, quiet = False)
@@ -28,11 +28,11 @@ def generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen
         filename_train_B = "B_to_A_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
         fig_train_B = generate_save_images_cyclegan(gen_f, train_img_B, save_folder, filename_train_B, quiet = False)
         
-        filename_test_A = "A_to_B_test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_test_A = generate_save_images_cyclegan(gen_g, test_img_A, save_folder, filename_test_A, quiet = False)
+        filename_val_A = "A_to_B_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_val_A = generate_save_images_cyclegan(gen_g, val_img_A, save_folder, filename_val_A, quiet = False)
         
-        filename_test_B = "B_to_A_test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_test_B = generate_save_images_cyclegan(gen_f, test_img_B, save_folder, filename_test_B, quiet = False)
+        filename_val_B = "B_to_A_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_val_B = generate_save_images_cyclegan(gen_f, val_img_B, save_folder, filename_val_B, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -43,36 +43,36 @@ def generate_sample_images_cyclegan(train_A, train_B, test_A, test_B, gen_g, gen
         wandb_fig_train_B = wandb.Image(fig_train_B, caption="Train_B")
         wandb_title_train_B =  wandb_title + " - Train B"
 
-        wandb_fig_test_A = wandb.Image(fig_test_A, caption="Test_A")
-        wandb_title_test_A =  wandb_title + " - Test A"
+        wandb_fig_val_A = wandb.Image(fig_val_A, caption="Val_A")
+        wandb_title_val_A =  wandb_title + " - Val A"
 
-        wandb_fig_test_B = wandb.Image(fig_test_B, caption="Test_B")
-        wandb_title_test_B =  wandb_title + " - Test B"
+        wandb_fig_val_B = wandb.Image(fig_val_B, caption="Val_B")
+        wandb_title_val_B =  wandb_title + " - Val B"
 
         wandb.log({wandb_title_train_A: wandb_fig_train_A,
                 wandb_title_train_B: wandb_fig_train_B,
-                wandb_title_test_A: wandb_fig_test_A,
-                wandb_title_test_B: wandb_fig_test_B})
+                wandb_title_val_A: wandb_fig_val_A,
+                wandb_title_val_B: wandb_fig_val_B})
 
     if QUIET_PLOT:
         plt.close(fig_train_A)
         plt.close(fig_train_B)
-        plt.close(fig_test_A)
-        plt.close(fig_test_B)
+        plt.close(fig_val_A)
+        plt.close(fig_val_B)
 
-def generate_fixed_images_cyclegan(train_img_A, train_img_B, test_img_A, test_img_B, gen_g, gen_f, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
+def generate_fixed_images_cyclegan(train_img_A, train_img_B, val_img_A, val_img_B, gen_g, gen_f, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
 
     filename_train_A = "A_to_B_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
     fig_train_A = generate_save_images_cyclegan(gen_g, train_img_A, save_folder, filename_train_A, quiet = False)
     
     filename_train_B = "B_to_A_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
     fig_train_B = generate_save_images_cyclegan(gen_f, train_img_B, save_folder, filename_train_B, quiet = False)
+
+    filename_val_A = "A_to_B_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+    fig_val_A = generate_save_images_cyclegan(gen_g, val_img_A, save_folder, filename_val_A, quiet = False)
     
-    filename_test_A = "A_to_B_test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_test_A = generate_save_images_cyclegan(gen_g, test_img_A, save_folder, filename_test_A, quiet = False)
-    
-    filename_test_B = "B_to_A_test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_test_B = generate_save_images_cyclegan(gen_f, test_img_B, save_folder, filename_test_B, quiet = False)
+    filename_val_B = "B_to_A_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+    fig_val_B = generate_save_images_cyclegan(gen_f, val_img_B, save_folder, filename_val_B, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -83,32 +83,32 @@ def generate_fixed_images_cyclegan(train_img_A, train_img_B, test_img_A, test_im
         wandb_fig_train_B = wandb.Image(fig_train_B, caption="Train_B")
         wandb_title_train_B =  wandb_title + " - Train B"
 
-        wandb_fig_test_A = wandb.Image(fig_test_A, caption="Test_A")
-        wandb_title_test_A =  wandb_title + " - Test A"
+        wandb_fig_val_A = wandb.Image(fig_val_A, caption="Val_A")
+        wandb_title_val_A =  wandb_title + " - Val A"
 
-        wandb_fig_test_B = wandb.Image(fig_test_B, caption="Test_B")
-        wandb_title_test_B =  wandb_title + " - Test B"
+        wandb_fig_val_B = wandb.Image(fig_val_B, caption="Val_B")
+        wandb_title_val_B =  wandb_title + " - Val B"
 
         wandb.log({wandb_title_train_A: wandb_fig_train_A,
                 wandb_title_train_B: wandb_fig_train_B,
-                wandb_title_test_A: wandb_fig_test_A,
-                wandb_title_test_B: wandb_fig_test_B})
+                wandb_title_val_A: wandb_fig_val_A,
+                wandb_title_val_B: wandb_fig_val_B})
 
     if QUIET_PLOT:
         plt.close(fig_train_A)
         plt.close(fig_train_B)
-        plt.close(fig_test_A)
-        plt.close(fig_test_B)
+        plt.close(fig_val_A)
+        plt.close(fig_val_B)
 
-def generate_sample_images_pix2pix(train_ds, test_ds, gen, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
+def generate_sample_images_pix2pix(train_ds, val_ds, gen, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
     
     for train_input, train_target in train_ds.take(1):
         filename_train = "train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
         fig_train = generate_save_images_pix2pix(gen, train_input, train_target, save_folder, filename_train, quiet = False)
 
-    for test_input, test_target in test_ds.take(1):
-        filename_test = "test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_test = generate_save_images_pix2pix(gen, test_input, test_target, save_folder, filename_test, quiet = False)
+    for val_input, val_target in val_ds.take(1):
+        filename_val = "val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+        fig_val = generate_save_images_pix2pix(gen, val_input, val_target, save_folder, filename_val, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -116,29 +116,29 @@ def generate_sample_images_pix2pix(train_ds, test_ds, gen, epoch, EPOCHS, save_f
         wandb_fig_train = wandb.Image(fig_train, caption="Train")
         wandb_title_train =  wandb_title + " - Train"
 
-        wandb_fig_test = wandb.Image(fig_test, caption="Test")
-        wandb_title_test =  wandb_title + " - Test"
+        wandb_fig_val = wandb.Image(fig_val, caption="Val")
+        wandb_title_val =  wandb_title + " - Val"
 
         wandb.log({wandb_title_train: wandb_fig_train,
-                wandb_title_test: wandb_fig_test})
+                wandb_title_val: wandb_fig_val})
 
     if QUIET_PLOT:
         plt.close(fig_train)
-        plt.close(fig_test)
+        plt.close(fig_val)
 
-def generate_fixed_images_pix2pix(fixed_train, fixed_test, gen, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
+def generate_fixed_images_pix2pix(fixed_train, fixed_val, gen, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
     
     # Recupera as imagens
     fixed_input_train, fixed_target_train = fixed_train
-    fixed_input_test, fixed_target_test = fixed_test
+    fixed_input_val, fixed_target_val = fixed_val
 
     # Train
     filename_train = "train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
     fig_train = generate_save_images_pix2pix(gen, fixed_input_train, fixed_target_train, save_folder, filename_train, quiet = False)
 
-    # Test
-    filename_test = "test_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_test = generate_save_images_pix2pix(gen, fixed_input_test, fixed_target_test, save_folder, filename_test, quiet = False)
+    # Val
+    filename_val = "val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
+    fig_val = generate_save_images_pix2pix(gen, fixed_input_val, fixed_target_val, save_folder, filename_val, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -146,15 +146,15 @@ def generate_fixed_images_pix2pix(fixed_train, fixed_test, gen, epoch, EPOCHS, s
         wandb_fig_train = wandb.Image(fig_train, caption="Train")
         wandb_title_train =  wandb_title + " - Train"
 
-        wandb_fig_test = wandb.Image(fig_test, caption="Test")
-        wandb_title_test =  wandb_title + " - Test"
+        wandb_fig_val = wandb.Image(fig_val, caption="Val")
+        wandb_title_val =  wandb_title + " - Val"
 
         wandb.log({wandb_title_train: wandb_fig_train,
-                wandb_title_test: wandb_fig_test})
+                wandb_title_val: wandb_fig_val})
 
     if QUIET_PLOT:
         plt.close(fig_train)
-        plt.close(fig_test)
+        plt.close(fig_val)
 
 #%% FUNÇÕES DO DATASET
 
@@ -413,7 +413,7 @@ def ResizedSquare(img, img_size, background = 'white'):
     
     return img_padded
 
-def validation_load_A(image_file, img_size):
+def generalization_load_A(image_file, img_size):
 
     image = tf.io.read_file(image_file)
     image = tf.image.decode_jpeg(image)    
@@ -423,7 +423,7 @@ def validation_load_A(image_file, img_size):
     
     return image
 
-def validation_load_B(image_file, img_size):
+def generalization_load_B(image_file, img_size):
 
     image = tf.io.read_file(image_file)
     image = tf.image.decode_jpeg(image)

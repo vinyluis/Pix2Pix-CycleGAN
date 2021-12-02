@@ -10,27 +10,29 @@ import time
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-# Parâmetros e constantes
-test_ratio = 0.15
+# Parï¿½metros e constantes
+test_ratio = 0.05
+val_ratio = 0.15
 img_size = 256
 file_prefix_A = "insects_wingless_"
 file_prefix_B = "insects_winged_"
 print_interval = 5
 
-read_folder_prefix = "C:/Users/T-Gamer/OneDrive/Vinicius/01-Estudos/00_Datasets/flickr_internetarchivebookimages/"
+read_folder_prefix = "F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/00_Datasets/flickr_internetarchivebookimages_unprepared/"
 read_folder_A = read_folder_prefix + "Sem Asa/"
 read_folder_B = read_folder_prefix + "Com Asa/"
 
-save_folder_prefix = "C:/Users/T-Gamer/OneDrive/Vinicius/01-Estudos/00_Datasets/flickr_internetarchivebookimages_prepared/"
+save_folder_prefix = "F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/00_Datasets/flickr_internetarchivebookimages/"
 save_folder_train = save_folder_prefix + "train"
 save_folder_test = save_folder_prefix + "test"
+save_folder_val = save_folder_prefix + "val"
 
 classA_suffix = "A/"
 classB_suffix = "B/"
 
 fill_color = (251, 231, 198)
 
-# Cria as pastas de saída
+# Cria as pastas de saï¿½da
 if not os.path.exists(save_folder_prefix):
     os.mkdir(save_folder_prefix)
     
@@ -47,16 +49,23 @@ if not os.path.exists(save_folder_test + classA_suffix):
     
 if not os.path.exists(save_folder_test + classB_suffix):
     os.mkdir(save_folder_test + classB_suffix)
+
+
+if not os.path.exists(save_folder_val + classA_suffix):
+    os.mkdir(save_folder_val + classA_suffix)
+
+if not os.path.exists(save_folder_val + classB_suffix):
+    os.mkdir(save_folder_val + classB_suffix)
     
 
-#%% FUNÇÕES
+#%% FUNï¿½ï¿½ES
 
-# Escala a imagem para a menor dimensão ficar com img_size, mantendo o aspect ratio
+# Escala a imagem para a menor dimensï¿½o ficar com img_size, mantendo o aspect ratio
 def ResizeAspectRatio(img, img_size, fit = 'larger'):
     
     # img = imagem de entrada
-    # img_size = tamanho do lado que será redimensionado
-    # fit = o lado que terá o tamanho definido é o maior ou o menor. default = larger
+    # img_size = tamanho do lado que serï¿½ redimensionado
+    # fit = o lado que terï¿½ o tamanho definido ï¿½ o maior ou o menor. default = larger
     
     # Resize mantendo o aspect ratio
     width = img.shape[0]
@@ -71,7 +80,7 @@ def ResizeAspectRatio(img, img_size, fit = 'larger'):
             new_h = img_size
             new_w = int(width * new_h / height)
 
-    # Se não for larger, faz com que o lado menor seja igual img_size
+    # Se nï¿½o for larger, faz com que o lado menor seja igual img_size
     else:
         if width < height:
             new_w = img_size
@@ -118,7 +127,7 @@ def ResizeSquare(img, img_size, background = 'white'):
     # Faz o resize mantendo o aspect ratio
     img = ResizeAspectRatio(img, img_size)
     
-    # Pega as informações da imagem
+    # Pega as informaï¿½ï¿½es da imagem
     h, w = img.shape[0], img.shape[1]
     
     # Cria uma matriz
@@ -171,7 +180,7 @@ def ThreeCrop(img, img_size):
 
     img_c = CenterCrop(img, img_size)
 
-    # Acerta os tamanhos, só por via das dúvidas
+    # Acerta os tamanhos, sï¿½ por via das dï¿½vidas
     dim = (img_size, img_size)  
     img_a = cv.resize(img_a, dim, interpolation = cv.INTER_CUBIC)
     img_b = cv.resize(img_b, dim, interpolation = cv.INTER_CUBIC)
@@ -180,7 +189,7 @@ def ThreeCrop(img, img_size):
     return img_a, img_b, img_c
     
 
-#%% EXECUÇÃO - Classe A
+#%% EXECUï¿½ï¿½O - Classe A
 
 # Primeiro prepara a Classe A
 
@@ -189,8 +198,8 @@ files_A = [f for f in os.listdir(read_folder_A) if isfile(join(read_folder_A, f)
 num_files_A = len(files_A)
 print("Encontrado {0} arquivos da classe A".format(num_files_A))
 
-# Para cada arquivo, cria a versão reduzida em forma de quadrado, center crop, left (or top) crop e right (or bottom) crop
-# Assim, para cada arquivo, serão gerados quatro novos arquivos
+# Para cada arquivo, cria a versï¿½o reduzida em forma de quadrado, center crop, left (or top) crop e right (or bottom) crop
+# Assim, para cada arquivo, serï¿½o gerados quatro novos arquivos
 c = 1
 t1 = time.time()
 for file in files_A:
@@ -198,11 +207,13 @@ for file in files_A:
     if c % print_interval == 0 or c == 1 or c == num_files_A:
         print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c, num_files_A, 100*c/num_files_A)) 
         
-    # Sorteia se a imagem será imagem de teste ou de treino
+    # Sorteia se a imagem serï¿½ imagem de teste ou de treino
     rnum = np.random.rand()
 
     if(rnum < test_ratio):
         dest_folder = save_folder_test + classA_suffix
+    elif(rnum >= test_ratio and rnum <= (test_ratio + val_ratio)):
+        dest_folder = save_folder_val + classA_suffix
     else:
         dest_folder = save_folder_train + classA_suffix
 
@@ -213,7 +224,7 @@ for file in files_A:
     # Faz o resize e o center crop
     #img_a, img_b, img_c = ThreeCrop(img, img_size)
     
-    # Faz a versão reduzida em forma de quadrado
+    # Faz a versï¿½o reduzida em forma de quadrado
     img_d = ResizeSquare(img, img_size, background = "as_pixel")
 
     # Salva os arquivos
@@ -238,7 +249,7 @@ print ('O tempo total foi de {:.2f} min ({:.2f} s)\n'.format(dt/60, dt))
 
 
 
-#%% EXECUÇÃO - Classe B
+#%% EXECUï¿½ï¿½O - Classe B
 
 # Primeiro prepara a Classe B
 
@@ -247,8 +258,8 @@ files_B = [f for f in os.listdir(read_folder_B) if isfile(join(read_folder_B, f)
 num_files_B = len(files_B)
 print("Encontrado {0} arquivos da classe B".format(num_files_B))
 
-# Para cada arquivo, cria a versão reduzida em forma de quadrado, center crop, left (or top) crop e right (or bottom) crop
-# Bssim, para cada arquivo, serão gerados quatro novos arquivos
+# Para cada arquivo, cria a versï¿½o reduzida em forma de quadrado, center crop, left (or top) crop e right (or bottom) crop
+# Bssim, para cada arquivo, serï¿½o gerados quatro novos arquivos
 c = 1
 t1 = time.time()
 for file in files_B:
@@ -256,11 +267,13 @@ for file in files_B:
     if c % print_interval == 0 or c == 1 or c == num_files_B:
         print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c, num_files_B, 100*c/num_files_B)) 
         
-    # Sorteia se a imagem será imagem de teste ou de treino
+    # Sorteia se a imagem serï¿½ imagem de teste ou de treino
     rnum = np.random.rand()
 
     if(rnum < test_ratio):
         dest_folder = save_folder_test + classB_suffix
+    elif(rnum >= test_ratio and rnum <= (test_ratio + val_ratio)):
+        dest_folder = save_folder_val + classB_suffix
     else:
         dest_folder = save_folder_train + classB_suffix
 
@@ -271,7 +284,7 @@ for file in files_B:
     # Faz o resize e o center crop
     #img_a, img_b, img_c = ThreeCrop(img, img_size)
     
-    # Faz a versão reduzida em forma de quadrado
+    # Faz a versï¿½o reduzida em forma de quadrado
     img_d = ResizeSquare(img, img_size, background = "as_pixel")
 
     # Salva os arquivos
