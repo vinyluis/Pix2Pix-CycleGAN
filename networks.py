@@ -256,3 +256,19 @@ def Discriminator_Pix2Pix(IMG_SIZE, OUTPUT_CHANNELS, norm_type ='instancenorm'):
                                   kernel_initializer=initializer)(zero_pad2) # (bs, 30, 30, 1)
     
     return tf.keras.Model(inputs=[inp, tar], outputs=last)
+
+
+#%% TESTA
+
+#  Só roda quando este arquivo for chamado como main
+if __name__ == "__main__":
+
+    # Testa os shapes dos modelos
+    IMG_SIZE = 256
+    print(f"\n---- IMG_SIZE = {IMG_SIZE}")
+    print("Geradores:")
+    print("U-Net    ", Unet_Generator(IMG_SIZE, 3).output.shape)
+    print("ResNet   ", ResNet_Generator(IMG_SIZE, 3).output.shape)
+    print("Discriminadores:")
+    print("CycleGAN ", Discriminator_CycleGAN(IMG_SIZE, 3).output.shape)
+    print("Pix2Pix  ", Discriminator_Pix2Pix(IMG_SIZE, 3).output.shape)

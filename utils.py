@@ -2,9 +2,12 @@ import cv2 as cv
 import os
 import matplotlib.pyplot as plt
 import wandb
+import numpy as np
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 import tensorflow as tf
+
+import metrics
 
 #%% FUNÇÕES DE APOIO
 
@@ -155,6 +158,63 @@ def generate_fixed_images_pix2pix(fixed_train, fixed_val, gen, epoch, EPOCHS, sa
     if QUIET_PLOT:
         plt.close(fig_train)
         plt.close(fig_val)
+
+def cycle_test(dataset, gen_fwd, gen_bkw, ncycles, npictures, folder, start = 'A', QUIET_PLOT = True):
+
+    if start == 'A':
+        fromto = 'AtoB'
+        end = 'B'
+    elif start == 'B':
+        fromto = 'BtoA'
+        end = 'A'
+    else:
+        raise "Erro de definição de início. Por favor selecione start = A ou start = B"
+
+    # Teste de ciclagem
+    i = 0
+    losses = [] # Lista que irá guardar as losses de cada imagem
+    for image in dataset.shuffle(npictures, seed = 42).take(npictures):
+        
+        i += 1
+
+        print("{s} -> {e} ({ix})".format(s = start, e = end, ix = i))
+        filename = str(i).zfill(len(str(npictures))) + "_" + fromto + "_original.jpg"
+        tf.keras.preprocessing.image.save_img(folder + filename, image[0])
+        if not QUIET_PLOT:
+            plt.figure()
+            plt.imshow(image[0] * 0.5 + 0.5)
+
+        # Guarda a original
+        original = image
+
+        for c in range(ncycles):
+            
+            # Avança (FWD)
+            filename = str(i).zfill(len(str(npictures))) + "_" + fromto + "_FwdClass" + end + "_cycle" + str(c+1).zfill(len(str(npictures))) + ".jpg"
+            image = gen_fwd(image)
+            if not QUIET_PLOT:
+                plt.figure()
+                plt.imshow(image[0] * 0.5 + 0.5)
+            tf.keras.preprocessing.image.save_img(folder + filename, image[0])
+            
+            # Retorna (BKW)
+            filename = str(i).zfill(len(str(npictures))) + "_" + fromto + "BkwClass" + start + "_cycle" + str(c+1).zfill(len(str(npictures))) + ".jpg"
+            image = gen_bkw(image)
+            if not QUIET_PLOT:
+                plt.figure()
+                plt.imshow(image[0] * 0.5 + 0.5)
+            tf.keras.preprocessing.image.save_img(folder + filename, image[0])
+
+        # Calcula a distância L1 entre a original e a imagem como está agora após as ciclagens
+        l1_distance = metrics.get_l1_distance(original, image)
+
+        # Guarda essa lista de losses na lista de listas
+        losses.append(l1_distance)
+
+    # Calcula a média das distancias
+    mean_l1_distance = np.array(losses).mean()
+
+    return mean_l1_distance
 
 #%% FUNÇÕES DO DATASET
 
@@ -351,8 +411,7 @@ def generate_save_images_pix2pix(generator, input, tar, save_destination, filena
     else:
         plt.close(f)
 
-
-#%% FUNÇÕES DA VALIDAÇÃO
+#%% FUNÇÕES DA GENERALIZAÇÃO
 
 def CannyEdges(img, threshold = 200/3, ratio = 3, kernel_size = 3):
     img_blur = cv.blur(img, (3,3))

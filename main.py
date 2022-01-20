@@ -1,5 +1,7 @@
-# Image-to-Image Translation with Conditional Adversarial Networks
-# https://www.tensorflow.org/tutorials/generative/cyclegan
+## Main code for Pix2Pix and CycleGAN
+## Based on: https://www.tensorflow.org/tutorials/generative/cyclegan
+## Created for the Master's degree dissertation
+## Vinícius Trevisan 2020 - 2022
 
 ### Imports
 import os
@@ -19,7 +21,7 @@ import wandb
 
 # Define o projeto. Como são abordagens diferentes, dois projetos diferentes foram criados no wandb
 # Possíveis: 'cyclegan' e 'pix2pix'
-wandb_project = 'pix2pix'
+wandb_project = 'cyclegan'
 
 # Valida o projeto
 if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
@@ -52,7 +54,7 @@ config.TRAIN = True
 config.LAMBDA_CYCLEGAN = 10 # Controle da proporção das losses de consistência de ciclo e identidade
 config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adversária do gerador
 config.FIRST_EPOCH = 1
-config.EPOCHS = 10
+config.EPOCHS = 5
 config.USE_ID_LOSS = True
 config.LEARNING_RATE = 1e-4
 config.ADAM_BETA_1 = 0.5
@@ -79,8 +81,8 @@ config.LOAD_CKPT_EPOCH = 5
 config.SAVE_MODELS = True
 
 # Configurações de validação
-config.EVAL_ITERATIONS = 10 # A cada quantas iterações se faz a avaliação das métricas nas imagens de validação
 config.VALIDATION = True # Gera imagens da validação
+config.EVAL_ITERATIONS = 10 # A cada quantas iterações se faz a avaliação das métricas nas imagens de validação
 config.NUM_VAL_PRINTS = 10 # Controla quantas imagens de validação serão feitas. Com -1 plota todo o dataset de validação
 
 # Configurações de teste
@@ -88,24 +90,25 @@ config.TEST = True # Teste do modelo
 config.NUM_TEST_PRINTS = 500 # Controla quantas imagens de teste serão feitas. Com -1 plota todo o dataset de teste
 
 # Configuração do teste de ciclo e generalização
+config.GENERALIZATION = True # Teste de generalização
 config.CYCLE_TEST = True # Realiza o teste de ciclo
 config.CYCLES = 10 # Quantos ciclos para cada teste de ciclo
 config.CYCLE_TEST_PICTURES = 10 # Em quantas imagens será feito o teste de ciclo
-config.GENERALIZATION = True # Teste de generalização
 
 # Outras configurações
 QUIET_PLOT = True # Controla se as imagens aparecerão na tela, o que impede a execução do código a depender da IDE
+SHUTDOWN_AFTER_FINISH = False # Controla se o PC será desligado quando o código terminar corretamente
 
 #%% CONTROLE DA ARQUITETURA
 
 # Código do experimento (se não houver, deixar "")
-config.exp = "P02B"
+config.exp = "C01E"
 
 # Modelo do gerador. Possíveis = 'resnet', 'unet'
 config.gen_model = 'resnet'
 
 # Tipo de experimento. Possíveis = 'pix2pix', 'cyclegan'
-config.net_type = 'pix2pix'
+config.net_type = 'cyclegan'
 
 # Valida se o experimento é coerente com o projeto wandb selecionado
 if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan') 
@@ -175,7 +178,7 @@ cars_paired_folder_complete = dataset_root + '60k_car_dataset_edges/'
 #############################
 # --- Dataset escolhido --- #
 #############################
-dataset_folder = cars_paired_folder
+dataset_folder = cars_folder
 
 # Pastas de treino e teste
 train_folder = dataset_folder + 'train'
@@ -197,11 +200,11 @@ config.BUFFER_SIZE = 100
 # Definição do BATCH_SIZE
 if config.net_type == 'cyclegan':
     if config.gen_model == 'unet':
-        config.BATCH_SIZE = 10
+        config.BATCH_SIZE = 4
     elif config.gen_model == 'resnet':
         config.BATCH_SIZE = 2
     else:
-        config.BATCH_SIZE = 10
+        config.BATCH_SIZE = 1
 
 elif config.net_type == 'pix2pix':
     if config.gen_model == 'unet':
@@ -365,7 +368,7 @@ do dataset e o valor em EVALUATE_PERCENT_OF_DATASET
 
 # Configuração dos batches sizes
 if dataset_folder == simpsons_folder:
-    config.METRIC_BATCH_SIZE = 10 # Não há imagens o suficiente para fazer um batch size muito grande
+    config.METRIC_BATCH_SIZE = 5 # Não há imagens o suficiente para fazer um batch size muito grande
 
 elif dataset_folder == cars_folder or dataset_folder == cars_paired_folder or dataset_folder == cars_paired_folder_complete:
     config.METRIC_BATCH_SIZE = 36
@@ -964,7 +967,7 @@ if config.VALIDATION:
 
 if config.TEST:
 
-    # Gera imagens do dataset de validação
+    # Gera imagens do dataset de teste
 
     if config.net_type == 'cyclegan':
         print("\nCriando imagens do conjunto de teste...")
@@ -1059,16 +1062,18 @@ if config.TEST:
     else:
         raise utils.ArchitectureError(config.net_type)
 
-    # Gera métricas do dataset de validação
+    # Gera métricas do dataset de teste
 
     if config.net_type == 'cyclegan':
+        print("Iniciando avaliação das métricas de qualidade do dataset de teste")
         test_sample_A = test_A.unbatch().shuffle(config.BUFFER_SIZE).batch(config.METRIC_BATCH_SIZE).take(config.METRIC_SAMPLE_SIZE_TEST) # Corrige o tamanho do batch
         test_sample_B = test_B.unbatch().shuffle(config.BUFFER_SIZE).batch(config.METRIC_BATCH_SIZE).take(config.METRIC_SAMPLE_SIZE_TEST) # Corrige o tamanho do batch
-        metric_results = metrics.etestuate_metrics_cyclegan(test_sample_A, test_sample_B, generator_g, generator_f, config.EVALUATE_IS, config.EVALUATE_FID)
+        metric_results = metrics.evaluate_metrics_cyclegan(test_sample_A, test_sample_B, generator_g, generator_f, config.EVALUATE_IS, config.EVALUATE_FID)
         test_metrics = {k+"_test": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "_test" no final das keys
         wandb.log(test_metrics)
 
-    if config.net_type == 'pix2pix':
+    elif config.net_type == 'pix2pix':
+        print("Iniciando avaliação das métricas de qualidade do dataset de teste")
         test_sample = test_dataset.unbatch().batch(config.METRIC_BATCH_SIZE).take(config.METRIC_SAMPLE_SIZE_test) # Corrige o tamanho do batch
         metric_results = metrics.evaluate_metrics_pix2pix(test_sample, generator, config.EVALUATE_IS, config.EVALUATE_FID, config.EVALUATE_L1)
         test_metrics = {k+"_test": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "_test" no final das keys
@@ -1187,69 +1192,18 @@ if config.CYCLE_TEST and config.net_type == 'cyclegan':
 
     if not os.path.exists(BtoA_folder):
         os.mkdir(BtoA_folder)
-    
-    # Múltiplos ciclos A to B
-    i = 0
-    for image in test_A.shuffle(config.CYCLE_TEST_PICTURES, seed = 42).take(config.CYCLE_TEST_PICTURES):
-        
-        i += 1
 
-        print("\nA -> B ({})".format(i))
-        filename = str(i).zfill(len(str(config.CYCLE_TEST_PICTURES))) + "_AtoB_original.jpg"
-        tf.keras.preprocessing.image.save_img(AtoB_folder + filename, image[0])
-        if not QUIET_PLOT:
-          plt.figure()
-          plt.imshow(image[0] * 0.5 + 0.5)
-        
-        for c in range(config.CYCLES):
-            
-            # print("Ciclo "+ str(c+1))
-            
-            filename = str(i).zfill(len(str(config.CYCLE_TEST_PICTURES))) + "_AtoB_FwdClassB_cycle" + str(c+1).zfill(len(str(config.CYCLE_TEST_PICTURES))) + ".jpg"
-            image = generator_g(image)
-            if not QUIET_PLOT:
-              plt.figure()
-              plt.imshow(image[0] * 0.5 + 0.5)
-            tf.keras.preprocessing.image.save_img(AtoB_folder + filename, image[0])
-            
-            filename = str(i).zfill(len(str(config.CYCLE_TEST_PICTURES))) + "_AtoB_BkwClassA_cycle" + str(c+1).zfill(len(str(config.CYCLE_TEST_PICTURES))) + ".jpg"
-            image = generator_f(image)
-            if not QUIET_PLOT:
-              plt.figure()
-              plt.imshow(image[0] * 0.5 + 0.5)
-            tf.keras.preprocessing.image.save_img(AtoB_folder + filename, image[0])
-    
-    
-    # Múltiplos ciclos B to A
-    i = 0
-    for image in test_B.shuffle(config.CYCLE_TEST_PICTURES, seed = 42).take(config.CYCLE_TEST_PICTURES):
-        
-        i += 1
+    # Realiza o teste de ciclagem A -> B
+    mean_l1_distance_AtoB = utils.cycle_test(test_A, generator_g, generator_f, config.CYCLES, config.CYCLE_TEST_PICTURES, AtoB_folder, start = 'A', QUIET_PLOT = QUIET_PLOT)
+    print("Erro médio de reconstrução de ciclo A -> B: {}".format(mean_l1_distance_AtoB))
+    # Loga no wandb
+    wandb.log({'l1_cycle_AtoB': mean_l1_distance_AtoB})
 
-        print("\nB -> A ({})".format(i))
-        filename = str(i).zfill(len(str(config.CYCLE_TEST_PICTURES))) + "_BtoA_original.jpg"
-        tf.keras.preprocessing.image.save_img(BtoA_folder + filename, image[0])
-        if not QUIET_PLOT:
-          plt.figure()
-          plt.imshow(image[0] * 0.5 + 0.5)
-        
-        for c in range(config.CYCLES):
-            
-            # print("Ciclo "+ str(c+1))
-            
-            filename = str(i).zfill(len(str(config.CYCLE_TEST_PICTURES))) + "_BtoA_FwdClassA_cycle" + str(c+1).zfill(len(str(config.CYCLE_TEST_PICTURES))) + ".jpg"
-            image = generator_f(image)
-            if not QUIET_PLOT:
-              plt.figure()
-              plt.imshow(image[0] * 0.5 + 0.5)
-            tf.keras.preprocessing.image.save_img(BtoA_folder + filename, image[0]) 
-            
-            filename = str(i).zfill(len(str(config.CYCLE_TEST_PICTURES))) + "_BtoA_BkwClassB_cycle" + str(c+1).zfill(len(str(config.CYCLE_TEST_PICTURES))) + ".jpg"
-            image = generator_g(image)
-            if not QUIET_PLOT:
-              plt.figure()
-              plt.imshow(image[0] * 0.5 + 0.5)
-            tf.keras.preprocessing.image.save_img(BtoA_folder + filename, image[0])
+    # Realiza o teste de ciclagem B -> A
+    mean_l1_distance_BtoA = utils.cycle_test(test_B, generator_f, generator_g, config.CYCLES, config.CYCLE_TEST_PICTURES, BtoA_folder, start = 'B', QUIET_PLOT = QUIET_PLOT)
+    print("Erro médio de reconstrução de ciclo B -> A: {}".format(mean_l1_distance_BtoA))
+    # Loga no wandb
+    wandb.log({'l1_cycle_BtoA': mean_l1_distance_BtoA})
 
 #%% FINAL
 
@@ -1257,7 +1211,7 @@ if config.CYCLE_TEST and config.net_type == 'cyclegan':
 wandb.finish()
 
 ## Salva os modelos
-if config.SAVE_MODELS:
+if config.SAVE_MODELS and config.TRAIN:
     print("Salvando modelos...\n")
 
     if config.net_type == 'cyclegan':
@@ -1268,3 +1222,8 @@ if config.SAVE_MODELS:
     elif config.net_type == 'pix2pix':
         generator.save(model_folder+'generator.h5')
         discriminator.save(model_folder+'discriminator.h5')
+
+## Desliga o PC ao final do processo, se for o caso
+if SHUTDOWN_AFTER_FINISH:
+    time.sleep(60)
+    os.system("shutdown /s /t 10")
