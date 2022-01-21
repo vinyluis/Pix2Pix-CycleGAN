@@ -26,16 +26,16 @@ def generate_sample_images_cyclegan(train_A, train_B, val_A, val_B, gen_g, gen_f
         train_A.take(1), train_B.take(1), val_A.take(1), val_B.take(1)):
 
         filename_train_A = "A_to_B_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_train_A = generate_save_images_cyclegan(gen_g, train_img_A, save_folder, filename_train_A, quiet = False)
+        fig_train_A = generate_images_cyclegan(gen_g, train_img_A, save_folder, filename_train_A, quiet = False)
         
         filename_train_B = "B_to_A_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_train_B = generate_save_images_cyclegan(gen_f, train_img_B, save_folder, filename_train_B, quiet = False)
+        fig_train_B = generate_images_cyclegan(gen_f, train_img_B, save_folder, filename_train_B, quiet = False)
         
         filename_val_A = "A_to_B_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_val_A = generate_save_images_cyclegan(gen_g, val_img_A, save_folder, filename_val_A, quiet = False)
+        fig_val_A = generate_images_cyclegan(gen_g, val_img_A, save_folder, filename_val_A, quiet = False)
         
         filename_val_B = "B_to_A_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_val_B = generate_save_images_cyclegan(gen_f, val_img_B, save_folder, filename_val_B, quiet = False)
+        fig_val_B = generate_images_cyclegan(gen_f, val_img_B, save_folder, filename_val_B, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -66,16 +66,16 @@ def generate_sample_images_cyclegan(train_A, train_B, val_A, val_B, gen_g, gen_f
 def generate_fixed_images_cyclegan(train_img_A, train_img_B, val_img_A, val_img_B, gen_g, gen_f, epoch, EPOCHS, save_folder, QUIET_PLOT = True, log_wandb = True):
 
     filename_train_A = "A_to_B_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_train_A = generate_save_images_cyclegan(gen_g, train_img_A, save_folder, filename_train_A, quiet = False)
+    fig_train_A = generate_images_cyclegan(gen_g, train_img_A, save_folder, filename_train_A, quiet = False)
     
     filename_train_B = "B_to_A_train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_train_B = generate_save_images_cyclegan(gen_f, train_img_B, save_folder, filename_train_B, quiet = False)
+    fig_train_B = generate_images_cyclegan(gen_f, train_img_B, save_folder, filename_train_B, quiet = False)
 
     filename_val_A = "A_to_B_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_val_A = generate_save_images_cyclegan(gen_g, val_img_A, save_folder, filename_val_A, quiet = False)
+    fig_val_A = generate_images_cyclegan(gen_g, val_img_A, save_folder, filename_val_A, quiet = False)
     
     filename_val_B = "B_to_A_val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_val_B = generate_save_images_cyclegan(gen_f, val_img_B, save_folder, filename_val_B, quiet = False)
+    fig_val_B = generate_images_cyclegan(gen_f, val_img_B, save_folder, filename_val_B, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -107,11 +107,11 @@ def generate_sample_images_pix2pix(train_ds, val_ds, gen, epoch, EPOCHS, save_fo
     
     for train_input, train_target in train_ds.take(1):
         filename_train = "train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_train = generate_save_images_pix2pix(gen, train_input, train_target, save_folder, filename_train, quiet = False)
+        fig_train = generate_images_pix2pix(gen, train_input, train_target, save_folder, filename_train, quiet = False)
 
     for val_input, val_target in val_ds.take(1):
         filename_val = "val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-        fig_val = generate_save_images_pix2pix(gen, val_input, val_target, save_folder, filename_val, quiet = False)
+        fig_val = generate_images_pix2pix(gen, val_input, val_target, save_folder, filename_val, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -137,11 +137,11 @@ def generate_fixed_images_pix2pix(fixed_train, fixed_val, gen, epoch, EPOCHS, sa
 
     # Train
     filename_train = "train_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_train = generate_save_images_pix2pix(gen, fixed_input_train, fixed_target_train, save_folder, filename_train, quiet = False)
+    fig_train = generate_images_pix2pix(gen, fixed_input_train, fixed_target_train, save_folder, filename_train, quiet = False)
 
     # Val
     filename_val = "val_epoch_" + str(epoch).zfill(len(str(EPOCHS))) + ".jpg"
-    fig_val = generate_save_images_pix2pix(gen, fixed_input_val, fixed_target_val, save_folder, filename_val, quiet = False)
+    fig_val = generate_images_pix2pix(gen, fixed_input_val, fixed_target_val, save_folder, filename_val, quiet = False)
 
     if log_wandb:
         wandb_title = "Época {}".format(epoch)
@@ -324,28 +324,7 @@ def load_image_test_pix2pix(image_file, img_size):
 
 # Geração de imagens
 
-def generate_images_cyclegan(generator, input, quiet = True):
-  prediction = generator(input)
-    
-  f = plt.figure(figsize=(12, 3))
-
-  display_list = [input[0], prediction[0]]
-  title = ['Input Image', 'Predicted Image']
-
-  for i in range(2):
-    plt.subplot(1, 2, i+1)
-    plt.title(title[i])
-    # getting the pixel values between [0, 1] to plot it.
-    plt.imshow(display_list[i] * 0.5 + 0.5)
-    plt.axis('off')
-  
-  if not quiet:
-        f.show()
-        return f
-  else:
-        plt.close(f)
-
-def generate_save_images_cyclegan(generator, input, save_destination, filename, quiet = True):
+def generate_images_cyclegan(generator, input, save_destination = None, filename = None, quiet = True):
   prediction = generator(input)
     
   f = plt.figure(figsize=(12, 3))
@@ -361,35 +340,16 @@ def generate_save_images_cyclegan(generator, input, save_destination, filename, 
     plt.axis('off')
   plt.tight_layout()
   
-  f.savefig(save_destination + filename)
+  if save_destination != None and filename != None:
+    f.savefig(save_destination + filename)
 
   if not quiet:
         f.show()
         return f
   else:
         plt.close(f)
-
-def generate_images_pix2pix(generator, input, tar, quiet = True):
-    prediction = generator(input, training=True)
-    f = plt.figure(figsize=(12, 3))
-    
-    display_list = [input[0], tar[0], prediction[0]]
-    title = ['Input Image', 'Ground Truth', 'Predicted Image']
-    
-    for i in range(3):
-        plt.subplot(1, 3, i+1)
-        plt.title(title[i])
-        # getting the pixel values between [0, 1] to plot it.
-        plt.imshow(display_list[i] * 0.5 + 0.5)
-        plt.axis('off')
-    
-    if not quiet:
-        f.show()
-        return f
-    else:
-        plt.close(f)
      
-def generate_save_images_pix2pix(generator, input, tar, save_destination, filename, quiet = True):
+def generate_images_pix2pix(generator, input, tar, save_destination = None, filename = None, quiet = True):
     prediction = generator(input, training=True)
     f = plt.figure(figsize=(12, 3))
     
@@ -403,7 +363,8 @@ def generate_save_images_pix2pix(generator, input, tar, save_destination, filena
         plt.imshow(display_list[i] * 0.5 + 0.5)
         plt.axis('off')
     
-    f.savefig(save_destination + filename)
+    if save_destination != None and filename != None:
+        f.savefig(save_destination + filename)
 
     if not quiet:
         f.show()

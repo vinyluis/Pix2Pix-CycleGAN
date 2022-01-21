@@ -58,6 +58,7 @@ config.EPOCHS = 5
 config.USE_ID_LOSS = True
 config.LEARNING_RATE = 1e-4
 config.ADAM_BETA_1 = 0.5
+config.NUM_RESIDUAL_BLOCKS = 6 # Número de blocos residuais do gerador CycleGAN
 # BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
 
 # Parâmetros das métricas
@@ -104,8 +105,8 @@ SHUTDOWN_AFTER_FINISH = False # Controla se o PC será desligado quando o códig
 # Código do experimento (se não houver, deixar "")
 config.exp = "C01E"
 
-# Modelo do gerador. Possíveis = 'resnet', 'unet'
-config.gen_model = 'resnet'
+# Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
+config.gen_model = 'cyclegan'
 
 # Tipo de experimento. Possíveis = 'pix2pix', 'cyclegan'
 config.net_type = 'cyclegan'
@@ -114,6 +115,11 @@ config.net_type = 'cyclegan'
 if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan') 
    or (wandb_project == 'pix2pix' and config.net_type == 'pix2pix')):
     raise utils.ProjectMismatch(wandb_project, config.net_type)
+
+# Valida se o número de blocos residuais é válido para o gerador CycleGAN
+if config.gen_model == 'cyclegan':
+    if not (config.NUM_RESIDUAL_BLOCKS == 6 or config.NUM_RESIDUAL_BLOCKS == 9):
+        raise BaseException("O número de blocos residuais do gerador CycleGAN não está correto. Opções = 6 ou 9.") 
 
 #%% PREPARA AS PASTAS
 
@@ -163,7 +169,7 @@ checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 #%% DATASET
 
 ### Pastas do dataset
-dataset_root = 'F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/00_Datasets/'
+dataset_root = '../../0_Datasets/celeba_hq/'
 
 # Datasets CycleGAN
 cars_folder = dataset_root + '60k_car_dataset_selected_edges_split/'
@@ -199,17 +205,17 @@ config.BUFFER_SIZE = 100
 
 # Definição do BATCH_SIZE
 if config.net_type == 'cyclegan':
-    if config.gen_model == 'unet':
+    if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
         config.BATCH_SIZE = 4
-    elif config.gen_model == 'resnet':
+    elif config.gen_model == 'cyclegan':
         config.BATCH_SIZE = 2
     else:
         config.BATCH_SIZE = 1
 
 elif config.net_type == 'pix2pix':
-    if config.gen_model == 'unet':
+    if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
         config.BATCH_SIZE = 12
-    elif config.gen_model == 'resnet':
+    elif config.gen_model == 'cyclegan':
         config.BATCH_SIZE = 6
     else:
         config.BATCH_SIZE = 10
@@ -784,20 +790,25 @@ def fit_pix2pix(first_epoch, epochs, gen, disc, gen_optimizer, disc_optimizer):
 
 # ---- GERADORES
 if config.net_type == 'cyclegan':
-    if config.gen_model == 'unet':
+    if config.gen_model == 'pix2pix':
+        generator_g = networks.Pix2Pix_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS)
+        generator_f = networks.Pix2Pix_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS)
+    elif config.gen_model == 'unet':
         generator_g = networks.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
         generator_f = networks.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-    elif config.gen_model == 'resnet':
-        generator_g = networks.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-        generator_f = networks.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    elif config.gen_model == 'cyclegan':
+        generator_g = networks.CycleGAN_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm', num_residual_blocks=config.NUM_RESIDUAL_BLOCKS)
+        generator_f = networks.CycleGAN_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm', num_residual_blocks=config.NUM_RESIDUAL_BLOCKS)
     else:
         raise utils.GeneratorError(config.gen_model)
 
 elif config.net_type == 'pix2pix':
-    if config.gen_model == 'unet':
+    if config.gen_model == 'pix2pix':
+        generator = networks.Pix2Pix_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS)
+    elif config.gen_model == 'unet':
         generator = networks.Unet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-    elif config.gen_model == 'resnet':
-        generator = networks.ResNet_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    elif config.gen_model == 'cyclegan':
+        generator = networks.CycleGAN_Generator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm', num_residual_blocks=config.NUM_RESIDUAL_BLOCKS)
     else:
         raise utils.GeneratorError(config.gen_model)
 
@@ -807,11 +818,11 @@ else:
 
 # ---- DISCRIMINADORES
 if config.net_type == 'cyclegan':
-    discriminator_a = networks.Discriminator_CycleGAN(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-    discriminator_b = networks.Discriminator_CycleGAN(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    discriminator_a = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    discriminator_b = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
 
 elif config.net_type == 'pix2pix':
-    discriminator = networks.Discriminator_Pix2Pix(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    discriminator = networks.Pix2Pix_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
 
 else:
     raise utils.ArchitectureError(config.net_type)
@@ -915,7 +926,7 @@ if config.VALIDATION:
             if c % onepercent == 0 or c == 0 or c == num_imgs:
                 print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
             filename = "A_to_B_val_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
-            utils.generate_save_images_cyclegan(generator_g, inp, result_val_folder, filename, quiet = QUIET_PLOT)
+            utils.generate_images_cyclegan(generator_g, inp, result_val_folder, filename, quiet = QUIET_PLOT)
 
         ## -- B TO A --
         print("\nB to A")
@@ -936,7 +947,7 @@ if config.VALIDATION:
             if c % onepercent == 0 or c == 0 or c == num_imgs:
                 print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
             filename = "B_to_A_val_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
-            utils.generate_save_images_cyclegan(generator_f, inp, result_val_folder, filename, quiet = QUIET_PLOT)
+            utils.generate_images_cyclegan(generator_f, inp, result_val_folder, filename, quiet = QUIET_PLOT)
 
     elif config.net_type == 'pix2pix':
         print("\nCriando imagens do conjunto de validação...")
@@ -957,7 +968,7 @@ if config.VALIDATION:
             if c % onepercent == 0 or c == 0 or c == num_imgs:
                 print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
             filename = "val_results_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
-            utils.generate_save_images_pix2pix(generator, inp, tar, result_val_folder, filename, quiet = QUIET_PLOT)
+            utils.generate_images_pix2pix(generator, inp, tar, result_val_folder, filename, quiet = QUIET_PLOT)
 
     else:
         raise utils.ArchitectureError(config.net_type)
@@ -992,7 +1003,7 @@ if config.TEST:
             if c % onepercent == 0 or c == 0 or c == num_imgs:
                 print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
             filename = "A_to_B_test_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
-            utils.generate_save_images_cyclegan(generator_g, inp, result_test_folder, filename, quiet = QUIET_PLOT)
+            utils.generate_images_cyclegan(generator_g, inp, result_test_folder, filename, quiet = QUIET_PLOT)
         
         dt = time.time() - t1
 
@@ -1019,7 +1030,7 @@ if config.TEST:
             if c % onepercent == 0 or c == 0 or c == num_imgs:
                 print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
             filename = "B_to_A_test_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
-            utils.generate_save_images_cyclegan(generator_f, inp, result_test_folder, filename, quiet = QUIET_PLOT)
+            utils.generate_images_cyclegan(generator_f, inp, result_test_folder, filename, quiet = QUIET_PLOT)
 
         dt = time.time() - t1
 
@@ -1049,7 +1060,7 @@ if config.TEST:
             if c % onepercent == 0 or c == 0 or c == num_imgs:
                 print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c+1, num_imgs, 100*(c+1)/num_imgs))
             filename = "test_results_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
-            utils.generate_save_images_pix2pix(generator, inp, tar, result_test_folder, filename, quiet = QUIET_PLOT)
+            utils.generate_images_pix2pix(generator, inp, tar, result_test_folder, filename, quiet = QUIET_PLOT)
 
         dt = time.time() - t1
 
@@ -1120,7 +1131,7 @@ if config.GENERALIZATION and config.net_type == 'cyclegan' and dataset_folder ==
         image = np.expand_dims(image, axis=0)
             
         filename = "generalization_results_" + str(c).zfill(len(str(ds_size))) + ".jpg"
-        utils.generate_save_images_cyclegan(generator_g, image, generalization_save_folder_A, filename, quiet = QUIET_PLOT)
+        utils.generate_images_cyclegan(generator_g, image, generalization_save_folder_A, filename, quiet = QUIET_PLOT)
         c = c + 1
     
     ## GENERALIZAÇÃO B TO A
@@ -1138,7 +1149,7 @@ if config.GENERALIZATION and config.net_type == 'cyclegan' and dataset_folder ==
         image = np.expand_dims(image, axis=0)
             
         filename = "generalization_results_" + str(c).zfill(len(str(ds_size))) + ".jpg"
-        utils.generate_save_images_cyclegan(generator_f, image, generalization_save_folder_B, filename, quiet = QUIET_PLOT)
+        utils.generate_images_cyclegan(generator_f, image, generalization_save_folder_B, filename, quiet = QUIET_PLOT)
         c = c + 1
     
 if config.GENERALIZATION and config.net_type == 'pix2pix' and dataset_folder == cars_paired_folder or dataset_folder == cars_paired_folder_complete:
@@ -1170,7 +1181,7 @@ if config.GENERALIZATION and config.net_type == 'pix2pix' and dataset_folder == 
         image = np.expand_dims(image, axis=0)
             
         filename = "generalization_results_" + str(c).zfill(len(str(ds_size))) + ".jpg"
-        utils.generate_save_images_pix2pix(generator, image, image, generalization_save_folder, filename, quiet = QUIET_PLOT)
+        utils.generate_images_pix2pix(generator, image, image, generalization_save_folder, filename, quiet = QUIET_PLOT)
         
         c = c + 1
 

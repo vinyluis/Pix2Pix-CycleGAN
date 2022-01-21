@@ -15,6 +15,8 @@ https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
 '''
 
 #%% BLOCOS
+
+## Básicos
 def downsample(filters, size, norm_type = 'instancenorm', apply_norm = True):
     initializer = tf.random_normal_initializer(0., 0.02)
     
@@ -28,7 +30,7 @@ def downsample(filters, size, norm_type = 'instancenorm', apply_norm = True):
         elif norm_type == 'instancenorm':
             result.add(tfa.layers.InstanceNormalization())
 
-    result.add(tf.keras.layers.LeakyReLU())
+    result.add(tf.keras.layers.LeakyReLU(0.2))
     
     return result
 
@@ -53,7 +55,9 @@ def upsample(filters, size, norm_type = 'instancenorm', apply_dropout=False):
     
     return result
 
-def resnet_block(input_tensor, filters, norm_type = 'instancenorm'):
+## Residuais
+
+def residual_block(input_tensor, filters, norm_type = 'instancenorm'):
     
     ''' 
     Cria um bloco resnet baseado na Resnet34
@@ -83,7 +87,39 @@ def resnet_block(input_tensor, filters, norm_type = 'instancenorm'):
     
     return x
 
+
 #%% GERADORES
+
+# Gerador Pix2Pix
+def Pix2Pix_Generator(IMG_SIZE, OUTPUT_CHANNELS):
+
+    # Define os inputs
+    inputs = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS])
+
+    # Encoder
+    x = inputs
+    x = downsample(64, 4, norm_type = 'batchnorm', apply_norm = False)(x)
+    x = downsample(128, 4, norm_type = 'batchnorm')(x)
+    x = downsample(256, 4, norm_type = 'batchnorm')(x)
+    x = downsample(512, 4, norm_type = 'batchnorm')(x)
+    x = downsample(512, 4, norm_type = 'batchnorm')(x)
+    x = downsample(512, 4, norm_type = 'batchnorm')(x)
+    x = downsample(512, 4, norm_type = 'batchnorm')(x)
+    x = downsample(512, 4, norm_type = 'batchnorm')(x)
+
+    # Decoder
+    x = upsample(512, 4, apply_dropout=True, norm_type = 'batchnorm')(x)
+    x = upsample(512, 4, apply_dropout=True, norm_type = 'batchnorm')(x)
+    x = upsample(512, 4, apply_dropout=True, norm_type = 'batchnorm')(x)
+    x = upsample(512, 4, norm_type = 'batchnorm')(x)
+    x = upsample(256, 4, norm_type = 'batchnorm')(x)
+    x = upsample(128, 4, norm_type = 'batchnorm')(x)
+    x = upsample(64, 4, norm_type = 'batchnorm')(x)
+
+    initializer = tf.random_normal_initializer(0., 0.02)
+    x = tf.keras.layers.Conv2DTranspose(OUTPUT_CHANNELS, 4, strides=2, padding='same', kernel_initializer=initializer, activation='tanh')(x)
+
+    return tf.keras.Model(inputs=inputs, outputs=x)
 
 # Gerador U-Net
 def Unet_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm'):
@@ -136,11 +172,11 @@ def Unet_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm'):
 
   return tf.keras.Model(inputs=inputs, outputs=x)
 
-# Gerador ResNet
-def ResNet_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm'):
+# Gerador CycleGAN
+def CycleGAN_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm', num_residual_blocks = 9):
     
     '''
-    Versão original do gerador utilizado nos papers Pix2Pix e CycleGAN
+    Versão original do gerador utilizado no paper CycleGAN
     '''
 
     if norm_type == 'batchnorm':
@@ -171,8 +207,8 @@ def ResNet_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm'):
     x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     
     # Blocos Resnet
-    for i in range(9):
-        x = resnet_block(x, 256)
+    for i in range(num_residual_blocks):
+        x = residual_block(x, 256)
         
     # print(x.shape)
         
@@ -197,7 +233,7 @@ def ResNet_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm'):
 
 #%% DISCRIMINADORES
 
-def Discriminator_CycleGAN(IMG_SIZE, OUTPUT_CHANNELS, norm_type ='instancenorm'):
+def CycleGAN_Discriminator(IMG_SIZE, OUTPUT_CHANNELS, norm_type ='instancenorm'):
     initializer = tf.random_normal_initializer(0., 0.02)
     
     inp = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='input_image')
@@ -226,7 +262,7 @@ def Discriminator_CycleGAN(IMG_SIZE, OUTPUT_CHANNELS, norm_type ='instancenorm')
     
     return tf.keras.Model(inputs=inp, outputs=last)
 
-def Discriminator_Pix2Pix(IMG_SIZE, OUTPUT_CHANNELS, norm_type ='instancenorm'):
+def Pix2Pix_Discriminator(IMG_SIZE, OUTPUT_CHANNELS, norm_type ='instancenorm'):
     initializer = tf.random_normal_initializer(0., 0.02)
     
     inp = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='input_image')
@@ -267,8 +303,9 @@ if __name__ == "__main__":
     IMG_SIZE = 256
     print(f"\n---- IMG_SIZE = {IMG_SIZE}")
     print("Geradores:")
+    print("Pix2Pix  ", Pix2Pix_Generator(IMG_SIZE, 3).output.shape)
     print("U-Net    ", Unet_Generator(IMG_SIZE, 3).output.shape)
-    print("ResNet   ", ResNet_Generator(IMG_SIZE, 3).output.shape)
+    print("CycleGAN ", CycleGAN_Generator(IMG_SIZE, 3).output.shape)
     print("Discriminadores:")
-    print("CycleGAN ", Discriminator_CycleGAN(IMG_SIZE, 3).output.shape)
-    print("Pix2Pix  ", Discriminator_Pix2Pix(IMG_SIZE, 3).output.shape)
+    print("CycleGAN ", CycleGAN_Discriminator(IMG_SIZE, 3).output.shape)
+    print("Pix2Pix  ", Pix2Pix_Discriminator(IMG_SIZE, 3).output.shape)
