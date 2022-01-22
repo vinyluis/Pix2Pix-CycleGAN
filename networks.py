@@ -9,7 +9,7 @@ import tensorflow_addons as tfa
 U-Net e discriminadores baseados na versão do tensorflow_examples
 https://github.com/tensorflow/examples/blob/master/tensorflow_examples/models/pix2pix/pix2pix.py
 
-ResNet adaptado do github do paper original
+Geradores CycleGAN e Pix2Pix adaptados do github do paper original
 https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
 
 '''

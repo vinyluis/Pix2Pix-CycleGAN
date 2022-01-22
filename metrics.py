@@ -24,6 +24,11 @@ model_FID = InceptionV3(include_top=False, pooling='avg', input_shape=(299,299,3
 #%% FUNÇÕES BASE
 
 def evaluate_metrics_cyclegan(sample_ds_A, sample_ds_B, generator_g, generator_f, evaluate_is, evaluate_fid, verbose = False):
+	"""Calcula as métricas de qualidade para o framework CycleGAN.
+
+	Calcula Inception Score e Frechét Inception Distance para todos os geradores.
+	"""
+
 	t1 = time.time()
 	inception_score_A = []
 	inception_score_B = []
@@ -100,6 +105,11 @@ def evaluate_metrics_cyclegan(sample_ds_A, sample_ds_B, generator_g, generator_f
 	return results
 
 def evaluate_metrics_pix2pix(sample_ds, generator, evaluate_is, evaluate_fid, evaluate_l1, verbose = False):
+	"""Calcula as métricas de qualidade para o framework Pix2Pix.
+
+	Calcula Inception Score e Frechét Inception Distance para o gerador.
+	Calcula a distância L1 (distância média absoluta pixel a pixel) entre a imagem sintética e a objetivo.
+	"""
 	t1 = time.time()
 	inception_score = []
 	frechet_inception_distance = []
@@ -177,12 +187,10 @@ def evaluate_metrics_pix2pix(sample_ds, generator, evaluate_is, evaluate_fid, ev
 
 # Inception Score
 def get_inception_score(image):
-	
 	'''
-	Calcula o Inception Score (IS) para uma única imagem. Baseado em:
-    https://machinelearningmastery.com/how-to-implement-the-inception-score-from-scratch-for-evaluating-generated-images/
+	Calcula o Inception Score (IS) para uma única imagem. 
+	Baseado em: https://machinelearningmastery.com/how-to-implement-the-inception-score-from-scratch-for-evaluating-generated-images/
 	'''
-
 	# Epsilon para evitar problemas no cálculo da divergência KL
 	eps=1E-16
 	# Redimensiona a imagem
@@ -204,12 +212,10 @@ def get_inception_score(image):
 
 # Frechet Inception Distance
 def get_frechet_inception_distance(image1, image2):
-
 	'''
-	Calcula o Fréchet Inception Distance (FID) entre duas imagens. Baseado em:
-    https://machinelearningmastery.com/how-to-implement-the-frechet-inception-distance-fid-from-scratch/
+	Calcula o Fréchet Inception Distance (FID) entre duas imagens. 
+	Baseado em: https://machinelearningmastery.com/how-to-implement-the-frechet-inception-distance-fid-from-scratch/
 	'''
-
 	# Redimensiona as imagens
 	image1 = utils.resize(image1, 299, 299)
 	image2 = utils.resize(image2, 299, 299)
@@ -233,58 +239,54 @@ def get_frechet_inception_distance(image1, image2):
 
 # L1 Distance
 def get_l1_distance(image1, image2):
-
-	'''
-	Calcula a distância L1 entre duas imagens
-	'''
-
-	# Calcula a L1 distance entre as duas imagens
+	'''Calcula a distância L1 (distância média absoluta pixel a pixel) entre duas imagens'''
 	l1_dist = tf.reduce_mean(tf.abs(image1 - image2))
-
 	return l1_dist
 
 # Avaliação de acurácia do discriminador - Pix2Pix
 def evaluate_accuracy_pix2pix(gen, disc, test_ds, y_real, y_pred, window = 100):
-    
-    # Gera uma imagem-base
-    for img_real, target in test_ds.take(1):
+	'''Avalia a acurácia do discriminador no framework Pix2Pix.
 
-        # A partir dela, gera uma imagem sintética
-        img_fake = gen(img_real, training = True)
-
-        # Avalia ambas
-        disc_real = disc([img_real, target], training = True)
-        disc_fake = disc([img_fake, target], training = True)
-
-        # Para o caso de ser um discriminador PatchGAN, tira a média
-        disc_real = np.mean(disc_real)
-        disc_fake = np.mean(disc_fake)
-
-        # Aplica o threshold
-        disc_real = 1 if disc_real > 0.5 else 0
-        disc_fake = 1 if disc_fake > 0.5 else 0
-
-        # Acrescenta a observação real como y_real = 1
-        y_real.append(1)
-        y_pred.append(disc_real)
-
-        # Acrescenta a observação fake como y_real = 0
-        y_real.append(0)
-        y_pred.append(disc_fake)
-        
-        # Calcula a acurácia pela janela
-        if len(y_real) > window:
-            acc = accuracy(y_real[-window:], y_pred[-window:])    
-        else:
-            acc = accuracy(y_real, y_pred)
-
-        return y_real, y_pred, acc
-
-# Avaliação de acurácia do discriminador - Pix2Pix
-def evaluate_accuracy_cyclegan(gen, disc, test_ds, y_real, y_pred, window = 100):
-
+	Compara o discriminador a um classificador binário.
 	'''
-	Lembrando:
+	# Gera uma imagem-base
+	for img_real, target in test_ds.take(1):
+		
+		# A partir dela, gera uma imagem sintética
+		img_fake = gen(img_real, training = True)
+
+		# Avalia ambas
+		disc_real = disc([img_real, target], training = True)
+		disc_fake = disc([img_fake, target], training = True)
+
+		# Para o caso de ser um discriminador PatchGAN, tira a média
+		disc_real = np.mean(disc_real)
+		disc_fake = np.mean(disc_fake)
+
+		# Aplica o threshold
+		disc_real = 1 if disc_real > 0.5 else 0
+		disc_fake = 1 if disc_fake > 0.5 else 0
+
+		# Acrescenta a observação real como y_real = 1
+		y_real.append(1)
+		y_pred.append(disc_real)
+
+		# Acrescenta a observação fake como y_real = 0
+		y_real.append(0)
+		y_pred.append(disc_fake)
+
+		# Calcula a acurácia pela janela
+		if len(y_real) > window:
+			acc = accuracy(y_real[-window:], y_pred[-window:])    
+		else:
+			acc = accuracy(y_real, y_pred)
+
+	return y_real, y_pred, acc
+
+# Avaliação de acurácia do discriminador - CycleGAN
+def evaluate_accuracy_cyclegan(gen, disc, test_ds, y_real, y_pred, window = 100):
+	'''Avalia a acurácia do discriminador no framework CycleGAN.
+	
 	Gerador G: A->B
 	Gerador F: B->A
 	Discriminador A: Discrimina A
@@ -323,7 +325,7 @@ def evaluate_accuracy_cyclegan(gen, disc, test_ds, y_real, y_pred, window = 100)
 		else:
 			acc = accuracy(y_real, y_pred)
 
-		return y_real, y_pred, acc
+	return y_real, y_pred, acc
 
 
 #%% VALIDATION
