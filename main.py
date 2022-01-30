@@ -21,7 +21,7 @@ import wandb
 
 # Define o projeto. Como são abordagens diferentes, dois projetos diferentes foram criados no wandb
 # Possíveis: 'cyclegan' e 'pix2pix'
-wandb_project = 'pix2pix'
+wandb_project = 'cyclegan'
 
 # Valida o projeto
 if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
@@ -49,16 +49,21 @@ config.IMG_SIZE = 256
 config.OUTPUT_CHANNELS = 3
 config.IMG_SHAPE = [config.IMG_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS]
 
-# Parâmetros da rede
+# Parâmetros da CycleGAN
+config.NUM_RESIDUAL_BLOCKS = 6 # Número de blocos residuais do gerador CycleGAN
+config.GAMMA_CYCLEGAN = 10 # Controle da proporção das losses de consistência de ciclo e identidade na CycleGAN
+config.USE_ID_LOSS = True # Controla se será usada a Loss de Identidade da CycleGAN
+config.ASSYMETRY_RATIO = 1/10 # Controla a assimetria do treinamento da CycleGAN. Se maior que 1, A->B é mais importante do que B->A
+
+# Parâmetros da Pix2Pix
+config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adversária do gerador na Pix2Pix
+
+# Parâmetros de treinamento
 config.TRAIN = True
-config.LAMBDA_CYCLEGAN = 10 # Controle da proporção das losses de consistência de ciclo e identidade
-config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adversária do gerador
 config.FIRST_EPOCH = 1
-config.EPOCHS = 10
-config.USE_ID_LOSS = True
+config.EPOCHS = 5
 config.LEARNING_RATE = 1e-4
 config.ADAM_BETA_1 = 0.5
-config.NUM_RESIDUAL_BLOCKS = 6 # Número de blocos residuais do gerador CycleGAN
 # BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
 
 # Parâmetros das métricas
@@ -103,13 +108,13 @@ SHUTDOWN_AFTER_FINISH = False # Controla se o PC será desligado quando o códig
 #%% CONTROLE DA ARQUITETURA
 
 # Código do experimento (se não houver, deixar "")
-config.exp = "P02B"
+config.exp = "C06B"
 
 # Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
-config.gen_model = 'cyclegan'
+config.gen_model = 'unet'
 
 # Tipo de experimento. Possíveis = 'pix2pix', 'cyclegan'
-config.net_type = 'pix2pix'
+config.net_type = 'cyclegan'
 
 # Valida se o experimento é coerente com o projeto wandb selecionado
 if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan') 
@@ -134,7 +139,7 @@ experiment_folder += '_gen_'
 experiment_folder += config.gen_model
 if config.net_type == 'cyclegan':
     experiment_folder += '_lambda_'
-    experiment_folder += str(config.LAMBDA_CYCLEGAN)
+    experiment_folder += str(config.GAMMA_CYCLEGAN)
 experiment_folder += "/"
 
 ### Pastas dos resultados
@@ -184,7 +189,7 @@ cars_paired_folder_complete = dataset_root + '60k_car_dataset_edges/'
 #############################
 # --- Dataset escolhido --- #
 #############################
-dataset_folder = cars_paired_folder
+dataset_folder = cars_folder
 
 # Pastas de treino, teste e validação
 train_folder = dataset_folder + 'train'
@@ -200,15 +205,12 @@ Para não dar overflow de memória é necessário ser cuidadoso com o Batch Size
 Ao usar os datasets de carros, setar USE_CACHE em False
 '''
 
-# Definiçãodo BUFFER_SIZE
-config.BUFFER_SIZE = 100
-
 # Definição do BATCH_SIZE
 if config.net_type == 'cyclegan':
     if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
         config.BATCH_SIZE = 4
     elif config.gen_model == 'cyclegan':
-        config.BATCH_SIZE = 2
+        config.BATCH_SIZE = 3
     else:
         config.BATCH_SIZE = 1
 
@@ -222,6 +224,11 @@ elif config.net_type == 'pix2pix':
 
 else:
     config.BATCH_SIZE = 10
+
+
+# Definiçãodo BUFFER_SIZE
+# config.BUFFER_SIZE = 100
+config.BUFFER_SIZE = config.BATCH_SIZE
 
 # Definição do USE_CACHE
 if dataset_folder == cars_folder or dataset_folder == cars_paired_folder or dataset_folder == cars_paired_folder_complete:
@@ -380,14 +387,14 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
 
     A função gera as imagens sintéticas e as cicladas, e discrimina todas elas.
     Usando as imagens reais, sintéticas e cicladas, são calculadas as losses de todos os geradores e discriminadores.
-    Finalmente usa backpropagation para atualizar todos os geradores e discriminadores, e retornar as losses.
+    Finalmente usa backpropagation para atualizar todos os geradores e discriminadores, e retorna as losses.
     """
 
     with tf.GradientTape(persistent=True) as tape:
         # Gera as imagens falsas e as cicladas
         fake_b = gen_g(real_a, training=True)
         cycled_a = gen_f(fake_b, training=True)
-
+    
         fake_a = gen_f(real_b, training=True)
         cycled_b = gen_g(fake_a, training=True)
 
@@ -406,9 +413,19 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
         # Loss de ciclo
         total_cycle_loss = losses.cycle_loss(real_a, cycled_a) + losses.cycle_loss(real_b, cycled_b)
         
-        # Calcula a loss completa de gerador
-        total_gen_g_loss = gen_g_loss + config.LAMBDA_CYCLEGAN * total_cycle_loss
-        total_gen_f_loss = gen_f_loss + config.LAMBDA_CYCLEGAN * total_cycle_loss
+        # Calcula a loss completa de gerador considerando a assimetria
+        # Se config.ASSYMETRY_RATIO > 1, então A->B é mais importante que B->A
+        # Se config.ASSYMETRY_RATIO < 1, então A->B é menos importante que B->A
+        # Se config.ASSYMETRY_RATIO = 1, então A->B e B->A tem a mesma importância
+        if config.ASSYMETRY_RATIO > 1:
+            total_gen_g_loss = gen_g_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+            total_gen_f_loss = (1/config.ASSYMETRY_RATIO) * gen_f_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+        elif config.ASSYMETRY_RATIO < 1:
+            total_gen_g_loss = config.ASSYMETRY_RATIO * gen_g_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+            total_gen_f_loss = gen_f_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+        else:
+            total_gen_g_loss = gen_g_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+            total_gen_f_loss = gen_f_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
 
         # Se precisar, adiciona a loss de identidade
         if config.USE_ID_LOSS:
@@ -416,8 +433,8 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
             same_b = gen_g(real_b, training=True)
             id_loss_b = losses.identity_loss(real_b, same_b)
             id_loss_a = losses.identity_loss(real_a, same_a)
-            total_gen_g_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_b
-            total_gen_f_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_a
+            total_gen_g_loss += config.GAMMA_CYCLEGAN * 0.5 * id_loss_b
+            total_gen_f_loss += config.GAMMA_CYCLEGAN * 0.5 * id_loss_a
         else:
             id_loss_a = 0
             id_loss_b = 0
@@ -490,9 +507,19 @@ def evaluate_validation_losses_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, re
     # Loss de ciclo
     total_cycle_loss = losses.cycle_loss(real_a, cycled_a) + losses.cycle_loss(real_b, cycled_b)
     
-    # Calcula a loss completa de gerador
-    total_gen_g_loss = gen_g_loss + config.LAMBDA_CYCLEGAN * total_cycle_loss
-    total_gen_f_loss = gen_f_loss + config.LAMBDA_CYCLEGAN * total_cycle_loss
+    # Calcula a loss completa de gerador considerando a assimetria
+    # Se config.ASSYMETRY_RATIO > 1, então A->B é mais importante que B->A
+    # Se config.ASSYMETRY_RATIO < 1, então A->B é menos importante que B->A
+    # Se config.ASSYMETRY_RATIO = 1, então A->B e B->A tem a mesma importância
+    if config.ASSYMETRY_RATIO > 1:
+        total_gen_g_loss = gen_g_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+        total_gen_f_loss = (1/config.ASSYMETRY_RATIO) * gen_f_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+    if config.ASSYMETRY_RATIO < 1:
+        total_gen_g_loss = config.ASSYMETRY_RATIO * gen_g_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+        total_gen_f_loss = gen_f_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+    else:
+        total_gen_g_loss = gen_g_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
+        total_gen_f_loss = gen_f_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
 
     # Se precisar, adiciona a loss de identidade
     if config.USE_ID_LOSS:
@@ -500,8 +527,8 @@ def evaluate_validation_losses_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, re
         same_b = gen_g(real_b, training=True)
         id_loss_b = losses.identity_loss(real_b, same_b)
         id_loss_a = losses.identity_loss(real_a, same_a)
-        total_gen_g_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_b
-        total_gen_f_loss += config.LAMBDA_CYCLEGAN * 0.5 * id_loss_a
+        total_gen_g_loss += config.GAMMA_CYCLEGAN * 0.5 * id_loss_b
+        total_gen_f_loss += config.GAMMA_CYCLEGAN * 0.5 * id_loss_a
     else:
         id_loss_a = 0
         id_loss_b = 0
@@ -539,6 +566,11 @@ def fit_cyclegan(FIRST_EPOCH, EPOCHS, gen_g, gen_f, disc_a, disc_b,
 
     Inclui a geração de imagens fixas para monitorar a evolução do treinamento por época,
     e o registro de todas as métricas na plataforma Weights and Biases.
+
+    Gerador G: Realiza a transformação A->B
+    Gerador F: Realiza a transformação B->A
+    Discriminador A: Discrimina o domínio A
+    Discriminador B: Discrimina o domínio B
     """
 
     print("INICIANDO TREINAMENTO")
@@ -643,7 +675,7 @@ def train_step_pix2pix(gen, disc, gen_optimizer, disc_optimizer, input_img, targ
 
     A função gera a imagem sintética e a discrimina.
     Usando a imagem real e a sintética, são calculadas as losses do gerador e do discriminador.
-    Finalmente usa backpropagation para atualizar o gerador e o discriminador, e retornar as losses.
+    Finalmente usa backpropagation para atualizar o gerador e o discriminador, e retorna as losses.
     """
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
@@ -896,6 +928,7 @@ else:
             FIRST_EPOCH = config.FIRST_EPOCH
     else:
         FIRST_EPOCH = config.FIRST_EPOCH
+
 
 #%% TREINAMENTO
 
@@ -1279,10 +1312,10 @@ if config.SAVE_MODELS and config.TRAIN:
     print("Salvando modelos...\n")
 
     if config.net_type == 'cyclegan':
-        generator_g.save_weights(model_folder+'generator_g.tf')
-        generator_f.save_weights(model_folder+'generator_f.tf')
-        discriminator_a.save_weights(model_folder+'discriminator_a.tf')
-        discriminator_b.save_weights(model_folder+'discriminator_b.tf')
+        generator_g.save(model_folder+'generator_g.h5')
+        generator_f.save(model_folder+'generator_f.h5')
+        discriminator_a.save(model_folder+'discriminator_a.h5')
+        discriminator_b.save(model_folder+'discriminator_b.h5')
     elif config.net_type == 'pix2pix':
         generator.save(model_folder+'generator.h5')
         discriminator.save(model_folder+'discriminator.h5')

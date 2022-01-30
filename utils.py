@@ -268,7 +268,7 @@ def normalize(image):
     return image
 
 def resize(image, height, width):
-    """Redimensiona as imagens  para width x height"""
+    """Redimensiona as imagens para width x height"""
     image = tf.image.resize(image, [height, width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
     return image
 
