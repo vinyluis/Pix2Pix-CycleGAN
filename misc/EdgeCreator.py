@@ -8,7 +8,7 @@ import os
 from os import listdir
 from os.path import isfile, join
 
-# Par‚metros e constantes
+# Par√¢metros e constantes
 thresh = 50
 ratio = 3 # Canny recommended a upper:lower ratio between 2:1 and 3:1.
 kernel_size = 3
@@ -20,7 +20,7 @@ if not os.path.exists(save_folder):
     os.mkdir(save_folder)
 
 
-# FunÁıes
+# Fun√ß√µes
 def CannyThreshold(val, img_gray):
     low_threshold = val
     img_blur = cv.blur(img_gray, (3,3))
@@ -35,7 +35,7 @@ num_files = len(files)
 print("Encontrado {0} arquivos".format(num_files))
 
 
-# Para cada arquivo, cria a vers„o canny edges dele
+# Para cada arquivo, cria a vers√£o canny edges dele
 c = 1
 for file in files:
 

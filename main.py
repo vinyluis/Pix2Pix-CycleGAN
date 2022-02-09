@@ -53,7 +53,7 @@ config.IMG_SHAPE = [config.IMG_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS]
 config.NUM_RESIDUAL_BLOCKS = 6 # Número de blocos residuais do gerador CycleGAN
 config.GAMMA_CYCLEGAN = 10 # Controle da proporção das losses de consistência de ciclo e identidade na CycleGAN
 config.USE_ID_LOSS = True # Controla se será usada a Loss de Identidade da CycleGAN
-config.ASSYMETRY_RATIO = 1/10 # Controla a assimetria do treinamento da CycleGAN. Se maior que 1, A->B é mais importante do que B->A
+config.ASSYMETRY_RATIO = 5 # Controla a assimetria do treinamento da CycleGAN. Se maior que 1, A->B é mais importante do que B->A
 
 # Parâmetros da Pix2Pix
 config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adversária do gerador na Pix2Pix
@@ -108,7 +108,7 @@ SHUTDOWN_AFTER_FINISH = False # Controla se o PC será desligado quando o códig
 #%% CONTROLE DA ARQUITETURA
 
 # Código do experimento (se não houver, deixar "")
-config.exp = "C06B"
+config.exp = "C06C "
 
 # Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
 config.gen_model = 'unet'
@@ -976,7 +976,7 @@ if config.VALIDATION:
             progbar.update(i)
 
             # Salva o arquivo
-            filename = "A_to_B_val_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
+            filename = "A_to_B_val_" + str(i).zfill(len(str(num_imgs))) + ".jpg"
             utils.generate_images_cyclegan(generator_g, inp, result_val_folder, filename, quiet = QUIET_PLOT)
 
         ## -- B TO A --
@@ -1003,7 +1003,7 @@ if config.VALIDATION:
             progbar.update(i)
             
             # Salva o arquivo
-            filename = "B_to_A_val_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
+            filename = "B_to_A_val_" + str(i).zfill(len(str(num_imgs))) + ".jpg"
             utils.generate_images_cyclegan(generator_f, inp, result_val_folder, filename, quiet = QUIET_PLOT)
 
     elif config.net_type == 'pix2pix':
@@ -1030,7 +1030,7 @@ if config.VALIDATION:
             progbar.update(i)
 
             # Salva o arquivo
-            filename = "val_results_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
+            filename = "val_results_" + str(i).zfill(len(str(num_imgs))) + ".jpg"
             utils.generate_images_pix2pix(generator, inp, tar, result_val_folder, filename, quiet = QUIET_PLOT)
 
     else:
@@ -1071,7 +1071,7 @@ if config.TEST:
             progbar.update(i)
 
             # Salva o arquivo
-            filename = "A_to_B_test_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
+            filename = "A_to_B_test_" + str(i).zfill(len(str(num_imgs))) + ".jpg"
             utils.generate_images_cyclegan(generator_g, inp, result_test_folder, filename, quiet = QUIET_PLOT)
         
         dt = time.time() - t1
@@ -1104,7 +1104,7 @@ if config.TEST:
             progbar.update(i)
 
             # Salva o arquivo
-            filename = "B_to_A_test_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
+            filename = "B_to_A_test_" + str(i).zfill(len(str(num_imgs))) + ".jpg"
             utils.generate_images_cyclegan(generator_f, inp, result_test_folder, filename, quiet = QUIET_PLOT)
 
         dt = time.time() - t1
@@ -1140,7 +1140,7 @@ if config.TEST:
             progbar.update(i)
 
             # Salva o arquivo
-            filename = "test_results_" + str(c+1).zfill(len(str(num_imgs))) + ".jpg"
+            filename = "test_results_" + str(i).zfill(len(str(num_imgs))) + ".jpg"
             utils.generate_images_pix2pix(generator, inp, tar, result_test_folder, filename, quiet = QUIET_PLOT)
 
         dt = time.time() - t1
