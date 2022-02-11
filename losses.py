@@ -72,3 +72,95 @@ def generator_loss_pix2pix(disc_fake_output, fake_img, target, lambda_l1):
     l1_loss = tf.reduce_mean(tf.abs(target - fake_img))
     total_gen_loss = gan_loss + (lambda_l1 * l1_loss)
     return total_gen_loss, gan_loss, l1_loss
+
+
+## WASSERSTEIN
+
+'''
+Wasserstein GAN - Gradient Penalty (WGAN-GP): A WGAN tem uma forma muito bruta de assegurar a continuidade de Lipschitz, então
+os autores criaram o conceito de Gradient Penalty para manter essa condição de uma forma mais suave.
+- O gerador tem a MESMA loss da WGAN
+- O discriminador, em vez de ter seus pesos limitados pelo clipping, ganha uma penalidade de gradiente que deve ser calculada
+'''
+def loss_wgangp_generator_unsupervised(disc_generated_output):
+    """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o gerador."""
+    # O output do discriminador é de tamanho BATCH_SIZE x 1, o valor esperado é a média
+    gan_loss = -tf.reduce_mean(disc_generated_output)
+    return gan_loss
+
+def loss_wgangp_generator_supervised(disc_generated_output, gen_output, target, lambda_l1):
+    """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o gerador."""
+    # O output do discriminador é de tamanho BATCH_SIZE x 1, o valor esperado é a média
+    gan_loss = -tf.reduce_mean(disc_generated_output)
+    l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
+    total_gen_loss = gan_loss + (lambda_l1 * l1_loss)
+    return total_gen_loss, gan_loss, l1_loss
+
+def loss_wgangp_discriminator(disc, disc_real_output, disc_generated_output, real_img, generated_img, lambda_gp):
+    """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o discriminador."""
+    fake_loss = tf.reduce_mean(disc_generated_output)
+    real_loss = tf.reduce_mean(disc_real_output)
+    gp = gradient_penalty_conditional(disc, real_img, generated_img)
+    total_disc_loss = total_disc_loss = -(real_loss - fake_loss) + lambda_gp * gp + (0.001 * tf.reduce_mean(disc_real_output**2))
+    return total_disc_loss, real_loss, fake_loss
+
+def loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_generated_output, real_img, generated_img, target, lambda_gp):
+    """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o discriminador."""
+    fake_loss = tf.reduce_mean(disc_generated_output)
+    real_loss = tf.reduce_mean(disc_real_output)
+    gp = gradient_penalty_conditional(disc, real_img, generated_img, target)
+    total_disc_loss = total_disc_loss = -(real_loss - fake_loss) + lambda_gp * gp + (0.001 * tf.reduce_mean(disc_real_output**2))
+    return total_disc_loss, real_loss, fake_loss
+
+def gradient_penalty(discriminator, real_img, fake_img, training):
+    """Calcula a penalidade de gradiente para a loss de wassertein-gp (WGAN-GP)."""
+    # Get the Batch Size
+    batch_size = real_img.shape[0]
+
+    # Calcula gamma
+    gamma = tf.random.uniform([batch_size, 1, 1, 1])
+
+    # Calcula a imagem interpolada
+    interpolated = real_img * gamma + fake_img * (1 - gamma)
+
+    with tf.GradientTape() as gp_tape:
+        gp_tape.watch(interpolated)
+
+        # 1. Get the discriminator output for this interpolated image.
+        if training == 'direct':
+            pred = discriminator(interpolated, training=True) # O discriminador usa duas imagens como entrada
+        elif training == 'progressive':
+            pred = discriminator(interpolated)
+
+    # 2. Calculate the gradients w.r.t to this interpolated image.
+    grads = gp_tape.gradient(pred, [interpolated])[0]
+    # 3. Calculate the norm of the gradients.
+    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]))
+    gp = tf.reduce_mean((norm - 1.0) ** 2)
+    return gp
+
+def gradient_penalty_conditional(disc, real_img, generated_img, target):
+    """Calcula a penalidade de gradiente para a loss de wassertein-gp (WGAN-GP).
+    Adaptada para o uso em discriminadores condicionais.
+    """
+    # Get the Batch Size
+    batch_size = real_img.shape[0]
+
+    # Calcula gamma
+    gamma = tf.random.uniform([batch_size, 1, 1, 1])
+
+    # Calcula a imagem interpolada
+    interpolated = real_img * gamma + generated_img * (1 - gamma)
+    
+    with tf.GradientTape() as gp_tape:
+        gp_tape.watch(interpolated)
+        
+        # 1. Get the discriminator output for this interpolated image.
+        pred = disc([interpolated, target], training=True) # O discriminador usa duas imagens como entrada
+
+    # 2. Calculate the gradients w.r.t to this interpolated image.
+    grads = gp_tape.gradient(pred, [interpolated])[0]
+    # 3. Calculate the norm of the gradients.
+    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]))
+    gp = tf.reduce_mean((norm - 1.0) ** 2)
+    return gp

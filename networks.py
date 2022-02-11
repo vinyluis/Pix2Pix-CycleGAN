@@ -4,6 +4,8 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 import tensorflow as tf
 import tensorflow_addons as tfa
+from tensorflow.keras.constraints import Constraint
+from tensorflow.keras import backend
 
 '''
 U-Net e discriminadores baseados na versão do tensorflow_examples
@@ -55,6 +57,11 @@ def upsample(filters, size, norm_type = 'instancenorm', apply_dropout=False):
     
     return result
 
+def simple_downsample(x, scale = 2):
+    # Faz um downsample simplificado, baseado no Progressive Growth of GANs
+    x = tf.keras.layers.AveragePooling2D(pool_size = (scale, scale))(x)
+    return x
+
 ## Residuais
 
 def residual_block(input_tensor, filters, norm_type = 'instancenorm'):
@@ -86,6 +93,24 @@ def residual_block(input_tensor, filters, norm_type = 'instancenorm'):
     x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     
     return x
+
+## Extras
+
+class ClipConstraint(Constraint):
+# clip model weights to a given hypercube
+# https://machinelearningmastery.com/how-to-code-a-wasserstein-generative-adversarial-network-wgan-from-scratch/
+
+    # set clip value when initialized
+    def __init__(self, clip_value):
+        self.clip_value = clip_value
+    
+    # clip model weights to hypercube
+    def __call__(self, weights):
+        return backend.clip(weights, -self.clip_value, self.clip_value)
+    
+    # get the config
+    def get_config(self):
+        return {'clip_value': self.clip_value}
 
 
 #%% GERADORES
@@ -292,6 +317,113 @@ def Pix2Pix_Discriminator(IMG_SIZE, OUTPUT_CHANNELS, norm_type ='instancenorm'):
                                   kernel_initializer=initializer)(zero_pad2) # (bs, 30, 30, 1)
     
     return tf.keras.Model(inputs=[inp, tar], outputs=last)
+
+def ProGAN_Discriminator(IMG_SIZE, OUTPUT_CHANNELS, constrained = False, output_type = 'unit', conditional = False):
+
+    '''
+    Adaptado do discriminador utilizado nos papers ProgGAN e styleGAN
+    1ª adaptação é para poder fazer o treinamento condicional, mas com a loss adaptada da WGAN ou WGAN-GP
+    2ª adaptação é para usar imagens 256x256 (ou IMG_SIZE x IMG_SIZE):
+        As primeiras 3 convoluições são mantidas (filters = 16, 16, 32) com as dimensões 256 x 256
+        Então "pula" para a sexta convolução, que já é originalmente de tamanho 256 x 256 e continua daí para a frente
+    '''
+    # Inicializador das camadas 
+    initializer = tf.random_normal_initializer(0., 0.02)
+
+    # Restrições para o discriminador (usado na WGAN original)
+    constraint = ClipConstraint(0.01)
+    if constrained == False:
+        constraint = None
+
+    # Inicializa a rede e os inputs
+    # Se for condicional, tem input e target. Senão tem apenas o input
+    inp = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='input_image')
+    if conditional:
+        tar = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='target_image')
+        inputs = tf.keras.layers.concatenate([inp, tar])
+    else:
+        inputs = inp
+    x = inputs
+
+    # Primeiras três convoluções adaptadas para IMG_SIZE x IMG_SIZE
+    x = tf.keras.layers.Conv2D(16, (1 , 1), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint = constraint)(x) # (bs, 16, IMG_SIZE, IMG_SIZE)
+    x = tf.keras.layers.LeakyReLU()(x)
+    x = tf.keras.layers.Conv2D(16, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint = constraint)(x) # (bs, 16, IMG_SIZE, IMG_SIZE)
+    x = tf.keras.layers.LeakyReLU()(x)
+    x = tf.keras.layers.Conv2D(32, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint = constraint)(x) # (bs, 32, IMG_SIZE, IMG_SIZE)
+    x = tf.keras.layers.LeakyReLU()(x)
+    
+    if IMG_SIZE == 256:
+        # Etapa 256 (convoluções 6 e 7)
+        x = tf.keras.layers.Conv2D(64, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 64, 256, 256)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = tf.keras.layers.Conv2D(128, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 128, 256, 256)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = simple_downsample(x, scale = 2) # (bs, 128, 128, 128)
+    
+    # Etapa 128
+    x = tf.keras.layers.Conv2D(128, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 128, 128, 128)
+    x = tf.keras.layers.LeakyReLU()(x)
+    x = tf.keras.layers.Conv2D(256, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 256, 128, 128)
+    x = tf.keras.layers.LeakyReLU()(x)
+    x = simple_downsample(x, scale = 2) # (bs, 256, 64, 64)
+    
+    # Etapa 64
+    x = tf.keras.layers.Conv2D(256, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 256, 64, 64)
+    x = tf.keras.layers.LeakyReLU()(x)
+    x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 64, 64)
+    x = tf.keras.layers.LeakyReLU()(x)
+    x = simple_downsample(x, scale = 2) # (bs, 512, 32, 32)
+
+    if output_type == 'patchgan':
+        # Etapa 32 
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 32, 32)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 32, 32)
+        x = tf.keras.layers.LeakyReLU()(x)
+
+        # Adaptação para finalizar com 30x30
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = tf.keras.layers.Conv2D(1, 3, strides=1, kernel_initializer=initializer)(x) # (bs, 30, 30, 1)
+
+    elif output_type == 'unit':
+        # Etapa 32 
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 32, 32)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 32, 32)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = simple_downsample(x, scale = 2) # (bs, 512, 16, 16)
+
+        # Etapa 16
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 16, 16)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 16, 16)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = simple_downsample(x, scale = 2) # (bs, 512, 8, 8)
+        
+        # Etapa 8
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 8, 8)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 8, 8)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = simple_downsample(x, scale = 2) # (bs, 512, 4, 4)
+
+        # Final - 4 para 1
+        # Nesse ponto ele faz uma minibatch stddev. Avaliar depois fazer BatchNorm
+        x = tf.keras.layers.Conv2D(512, (3 , 3), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint=constraint)(x) # (bs, 512, 4, 4)
+        x = tf.keras.layers.LeakyReLU()(x)
+        x = tf.keras.layers.Conv2D(512, (4 , 4), strides=1, kernel_initializer=initializer, kernel_constraint=constraint)(x) # (bs, 512, 1, 1)
+        x = tf.keras.layers.LeakyReLU()(x)
+
+        # Finaliza com uma Fully Connected 
+        x = tf.keras.layers.Flatten()(x)
+        # x = tf.keras.layers.Dense(1, activation = 'linear', kernel_constraint=constraint)(x)
+        x = tf.keras.layers.Dense(1, kernel_constraint=constraint)(x)
+        
+    else:
+        raise BaseException("Escolha um tipo de saída válida")
+
+    return tf.keras.Model(inputs=inputs, outputs=x)
 
 
 #%% TESTA

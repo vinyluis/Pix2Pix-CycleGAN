@@ -21,14 +21,14 @@ import wandb
 
 # Define o projeto. Como são abordagens diferentes, dois projetos diferentes foram criados no wandb
 # Possíveis: 'cyclegan' e 'pix2pix'
-wandb_project = 'cyclegan'
+wandb_project = 'pix2pix'
 
 # Valida o projeto
 if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
     raise utils.ProjectError(wandb_project)
 
-# wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
-wandb.init(project=wandb_project, entity='vinyluis', mode="online")
+wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
+# wandb.init(project=wandb_project, entity='vinyluis', mode="online")
 
 #%% CONFIG TENSORFLOW
 
@@ -61,9 +61,10 @@ config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adve
 # Parâmetros de treinamento
 config.TRAIN = True
 config.FIRST_EPOCH = 1
-config.EPOCHS = 5
+config.EPOCHS = 2
 config.LEARNING_RATE = 1e-4
 config.ADAM_BETA_1 = 0.5
+config.LAMBDA_GP = 10 # Regulador do gradient penalty
 # BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
 
 # Parâmetros das métricas
@@ -108,13 +109,16 @@ SHUTDOWN_AFTER_FINISH = False # Controla se o PC será desligado quando o códig
 #%% CONTROLE DA ARQUITETURA
 
 # Código do experimento (se não houver, deixar "")
-config.exp = "C06C "
+config.exp = "Teste "
 
 # Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
 config.gen_model = 'unet'
 
 # Tipo de experimento. Possíveis = 'pix2pix', 'cyclegan'
-config.net_type = 'cyclegan'
+config.net_type = 'pix2pix'
+
+# Tipo de loss. Possíveis = "patchgan" ou "wgan-gp"
+config.loss_type = 'patchgan'
 
 # Valida se o experimento é coerente com o projeto wandb selecionado
 if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan') 
@@ -189,7 +193,7 @@ cars_paired_folder_complete = dataset_root + '60k_car_dataset_edges/'
 #############################
 # --- Dataset escolhido --- #
 #############################
-dataset_folder = cars_folder
+dataset_folder = cars_paired_folder
 
 # Pastas de treino, teste e validação
 train_folder = dataset_folder + 'train'
@@ -407,9 +411,13 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
         disc_fake_b = disc_b(fake_b, training=True)
 
         # Losses adversárias de gerador
-        gen_g_loss = losses.generator_loss(disc_fake_b)
-        gen_f_loss = losses.generator_loss(disc_fake_a)
-        
+        if config.loss_type == 'patchgan':
+            gen_g_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_b)
+            gen_f_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_a)
+        elif config.loss_type == 'wgan-gp':
+            gen_g_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_b)
+            gen_f_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_a)
+
         # Loss de ciclo
         total_cycle_loss = losses.cycle_loss(real_a, cycled_a) + losses.cycle_loss(real_b, cycled_b)
         
@@ -440,8 +448,12 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
             id_loss_b = 0
 
         # Calcula as losses de discriminador
-        disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.discriminator_loss(disc_real_a, disc_fake_a)
-        disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.discriminator_loss(disc_real_b, disc_fake_b)
+        if config.loss_type == 'patchgan':
+            disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.discriminator_loss(disc_real_a, disc_fake_a)
+            disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.discriminator_loss(disc_real_b, disc_fake_b)
+        elif config.loss_type == 'wgan-gp':
+            disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.loss_wgangp_discriminator(disc_a, disc_real_a, disc_fake_a, real_a, fake_a, config.LAMBDA_GP)
+            disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.loss_wgangp_discriminator(disc_b, disc_real_b, disc_fake_b, real_b, fake_b, config.LAMBDA_GP)
     
     # Calcula os gradientes
     gen_g_gradients = tape.gradient(total_gen_g_loss, gen_g.trainable_variables)
@@ -501,8 +513,12 @@ def evaluate_validation_losses_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, re
     disc_fake_b = disc_b(fake_b, training=True)
 
     # Losses adversárias de gerador
-    gen_g_loss = losses.generator_loss(disc_fake_b)
-    gen_f_loss = losses.generator_loss(disc_fake_a)
+    if config.loss_type == 'patchgan':
+        gen_g_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_b)
+        gen_f_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_a)
+    elif config.loss_type == 'wgan-gp':
+        gen_g_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_b)
+        gen_f_loss = losses.loss_wgangp_generator_unsupervised(disc_fake_a)
     
     # Loss de ciclo
     total_cycle_loss = losses.cycle_loss(real_a, cycled_a) + losses.cycle_loss(real_b, cycled_b)
@@ -534,8 +550,12 @@ def evaluate_validation_losses_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, re
         id_loss_b = 0
 
     # Calcula as losses de discriminador
-    disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.discriminator_loss(disc_real_a, disc_fake_a)
-    disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.discriminator_loss(disc_real_b, disc_fake_b)
+    if config.loss_type == 'patchgan':
+        disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.discriminator_loss(disc_real_a, disc_fake_a)
+        disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.discriminator_loss(disc_real_b, disc_fake_b)
+    elif config.loss_type == 'wgan-gp':
+        disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.loss_wgangp_discriminator(disc_a, disc_real_a, disc_fake_a, real_a, fake_a, config.LAMBDA_GP)
+        disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.loss_wgangp_discriminator(disc_b, disc_real_b, disc_fake_b, real_b, fake_b, config.LAMBDA_GP)
 
     # Cria um dicionário das losses
     loss_dict = {
@@ -683,10 +703,14 @@ def train_step_pix2pix(gen, disc, gen_optimizer, disc_optimizer, input_img, targ
           
         disc_real_output = disc([input_img, target], training=True)
         disc_fake_output = disc([input_img, fake_img], training=True)
-          
-        gen_total_loss, gen_gan_loss, gen_l1_loss = losses.generator_loss_pix2pix(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
-        disc_loss, disc_real_loss, disc_fake_loss = losses.discriminator_loss(disc_real_output, disc_fake_output)
-    
+        
+        if config.loss_type == 'patchgan':
+            gen_total_loss, gen_gan_loss, gen_l1_loss = losses.generator_loss_pix2pix(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
+            disc_loss, disc_real_loss, disc_fake_loss = losses.discriminator_loss(disc_real_output, disc_fake_output)
+        elif config.loss_type == 'wgan-gp':
+            gen_total_loss, gen_gan_loss, gen_l1_loss = losses.loss_wgangp_generator_supervised(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
+            disc_loss, disc_real_loss, disc_fake_loss = losses.loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_fake_output, input_img, fake_img, target, config.LAMBDA_GP)
+
     generator_gradients = gen_tape.gradient(gen_total_loss, gen.trainable_variables)
     discriminator_gradients = disc_tape.gradient(disc_loss, disc.trainable_variables)
     
@@ -719,8 +743,12 @@ def evaluate_validation_losses_pix2pix(gen, disc, input_img, target):
     disc_real_output = disc([input_img, target], training=True)
     disc_fake_output = disc([input_img, fake_img], training=True)
         
-    gen_total_loss, gen_gan_loss, gen_l1_loss = losses.generator_loss_pix2pix(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
-    disc_loss, disc_real_loss, disc_fake_loss = losses.discriminator_loss(disc_real_output, disc_fake_output)
+    if config.loss_type == 'patchgan':
+        gen_total_loss, gen_gan_loss, gen_l1_loss = losses.generator_loss_pix2pix(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
+        disc_loss, disc_real_loss, disc_fake_loss = losses.discriminator_loss(disc_real_output, disc_fake_output)
+    elif config.loss_type == 'wgan-gp':
+        gen_total_loss, gen_gan_loss, gen_l1_loss = losses.loss_wgangp_generator_supervised(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
+        disc_loss, disc_real_loss, disc_fake_loss = losses.loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_fake_output, input_img, fake_img, target, config.LAMBDA_GP)
 
     # Cria um dicionário das losses
     loss_dict = {
@@ -862,11 +890,22 @@ else:
 
 # ---- DISCRIMINADORES
 if config.net_type == 'cyclegan':
-    discriminator_a = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
-    discriminator_b = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    if config.loss_type == 'patchgan':
+        discriminator_a = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+        discriminator_b = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    elif config.loss_type == 'wgan-gp':
+        discriminator_a = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = True, output_type = 'unit', conditional = False)
+        discriminator_b = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = True, output_type = 'unit', conditional = False)
+    else:
+        raise BaseException("Tipo de loss não determinado")
 
 elif config.net_type == 'pix2pix':
-    discriminator = networks.Pix2Pix_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    if config.loss_type == 'patchgan':
+        discriminator = networks.Pix2Pix_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
+    elif config.loss_type == 'wgan-gp':
+        discriminator = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = True, output_type = 'unit', conditional = True)
+    else:
+        raise BaseException("Tipo de loss não determinado")
 
 else:
     raise utils.ArchitectureError(config.net_type)
