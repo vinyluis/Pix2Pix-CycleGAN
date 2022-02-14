@@ -925,6 +925,56 @@ elif config.net_type == 'pix2pix':
 else:
     raise utils.ArchitectureError(config.net_type)
 
+
+#%% CONSUMO DE MEMÓRIA
+print("Uso de memória dos modelos:")
+
+if config.net_type == 'cyclegan':
+    gen_g_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, generator_g)
+    gen_f_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, generator_f)
+    disc_a_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, discriminator_a)
+    disc_b_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, discriminator_b)
+    print(f"Gerador G       = {gen_g_mem_usage:,.2f} GB")
+    print(f"Gerador F       = {gen_f_mem_usage:,.2f} GB")
+    print(f"Discriminador A = {disc_a_mem_usage:,.2f} GB")
+    print(f"Discriminador B = {disc_b_mem_usage:,.2f} GB")
+elif config.net_type == 'pix2pix':
+    gen_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, generator)
+    disc_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, discriminator)
+    print(f"Gerador         = {gen_mem_usage:,.2f} GB")
+    print(f"Discriminador   = {disc_mem_usage:,.2f} GB")
+
+print("Uso de memória dos datasets:")
+train_ds_mem_usage = utils.get_full_dataset_memory_usage(config.TRAIN_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = train_dataset.element_spec.dtype)
+test_ds_mem_usage = utils.get_full_dataset_memory_usage(config.TEST_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = test_dataset.element_spec.dtype)
+val_ds_mem_usage = utils.get_full_dataset_memory_usage(config.VAL_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = val_dataset.element_spec.dtype)
+print(f"Train dataset   = {train_ds_mem_usage:,.2f} GB")
+print(f"Test dataset    = {test_ds_mem_usage:,.2f} GB")
+print(f"Val dataset     = {val_ds_mem_usage:,.2f} GB")
+
+if config.net_type == 'cyclegan':
+    print("Uso de memória básico em runtime:")
+    runtime_base_memory = (gen_g_mem_usage + gen_f_mem_usage + disc_a_mem_usage + disc_b_mem_usage +
+                           train_ds_mem_usage + val_ds_mem_usage)
+    print(f"gen + disc + train_ds + val_ds = {runtime_base_memory:,.2f} GB")
+    print("")
+
+    wandb.log({"gen_g_mem_usage_gbytes": gen_g_mem_usage, "gen_f_mem_usage_gbytes": gen_f_mem_usage, 
+            "disc_a_mem_usage_gbbytes" : disc_a_mem_usage, "disc_b_mem_usage_gbbytes" : disc_b_mem_usage, 
+            "train_ds_mem_usage_gbytes" : train_ds_mem_usage, "test_ds_mem_usage_gbytes" : test_ds_mem_usage,
+            "val_ds_mem_usage_gbytes" : val_ds_mem_usage})
+
+elif config.net_type == 'pix2pix':
+    print("Uso de memória básico em runtime:")
+    runtime_base_memory = (gen_mem_usage + disc_mem_usage + train_ds_mem_usage + val_ds_mem_usage)
+    print(f"gen + disc + train_ds + val_ds = {runtime_base_memory:,.2f} GB")
+    print("")
+
+    wandb.log({"gen_mem_usage_gbytes": gen_mem_usage, "disc_mem_usage_gbbytes" : disc_mem_usage, "train_ds_mem_usage_gbytes" : train_ds_mem_usage,
+            "test_ds_mem_usage_gbytes" : test_ds_mem_usage, "val_ds_mem_usage_gbytes" : val_ds_mem_usage})
+
+
+
 #%% CHECKPOINTS
 
 if config.net_type == 'cyclegan':

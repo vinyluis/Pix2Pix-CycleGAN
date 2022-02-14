@@ -1,11 +1,12 @@
-import cv2 as cv
 import os
+import numpy as np
+import cv2 as cv
 import matplotlib.pyplot as plt
 import wandb
-import numpy as np
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 import tensorflow as tf
+from tensorflow.keras import backend as K
 
 import metrics
 
@@ -256,6 +257,61 @@ def cycle_test(dataset, gen_fwd, gen_bkw, ncycles, npictures, folder, start = 'A
     mean_l1_distance = np.array(losses).mean()
 
     return mean_l1_distance
+
+## Memória
+
+def get_model_memory_usage(batch_size, model):
+
+    """
+    Based on https://stackoverflow.com/questions/43137288/how-to-determine-needed-memory-of-keras-model
+    """
+    shapes_mem_count = 0
+    internal_model_mem_count = 0
+    for l in model.layers:
+        layer_type = l.__class__.__name__
+        if layer_type == 'Model':
+            internal_model_mem_count += get_model_memory_usage(batch_size, l)
+        single_layer_mem = 1
+        out_shape = l.output_shape
+        if type(out_shape) is list:
+            out_shape = out_shape[0]
+        for s in out_shape:
+            if s is None:
+                continue
+            single_layer_mem *= s
+        shapes_mem_count += single_layer_mem
+
+    trainable_count = np.sum([K.count_params(p) for p in model.trainable_weights])
+    non_trainable_count = np.sum([K.count_params(p) for p in model.non_trainable_weights])
+
+    number_size = 4.0
+    if K.floatx() == 'float16':
+        number_size = 2.0
+    if K.floatx() == 'float64':
+        number_size = 8.0
+
+    total_memory = number_size * (batch_size * shapes_mem_count + trainable_count + non_trainable_count)
+    gbytes = np.round(total_memory / (1024.0 ** 3), 3) + internal_model_mem_count
+    return gbytes
+
+def get_full_dataset_memory_usage(num_imgs, image_size, image_channels, data_type):
+
+    if data_type == tf.float16:
+        unit_size = 2.0
+    elif data_type == tf.float32:
+        unit_size = 4.0
+    elif data_type == tf.float64:
+        unit_size = 8.0
+    else:
+        print("Não foi possível obter o data type da imagem")
+        unit_size = 1.0
+
+    image_memory_size_bytes = unit_size * (image_size ** 2) * image_channels
+    image_memory_size_gbytes = image_memory_size_bytes / (1024.0  ** 3)
+
+    dataset_memory_size_gbytes = num_imgs * image_memory_size_gbytes
+    return dataset_memory_size_gbytes
+    
 
 #%% FUNÇÕES DO DATASET
 
