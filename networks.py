@@ -115,7 +115,6 @@ class ClipConstraint(Constraint):
 
 #%% GERADORES
 
-# Gerador Pix2Pix
 def Pix2Pix_Generator(IMG_SIZE, OUTPUT_CHANNELS):
 
     # Define os inputs
@@ -146,7 +145,6 @@ def Pix2Pix_Generator(IMG_SIZE, OUTPUT_CHANNELS):
 
     return tf.keras.Model(inputs=inputs, outputs=x)
 
-# Gerador U-Net
 def Unet_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm'):
   inputs = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS])
 
@@ -197,7 +195,6 @@ def Unet_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm'):
 
   return tf.keras.Model(inputs=inputs, outputs=x)
 
-# Gerador CycleGAN
 def CycleGAN_Generator(IMG_SIZE, OUTPUT_CHANNELS, norm_type = 'instancenorm', num_residual_blocks = 9):
     
     '''
@@ -337,13 +334,15 @@ def ProGAN_Discriminator(IMG_SIZE, OUTPUT_CHANNELS, constrained = False, output_
 
     # Inicializa a rede e os inputs
     # Se for condicional, tem input e target. Senão tem apenas o input
-    inp = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='input_image')
     if conditional:
+        inp = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='input_image')
         tar = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='target_image')
-        inputs = tf.keras.layers.concatenate([inp, tar])
+        inputs = [inp, tar]
+        x = tf.keras.layers.concatenate(inputs)
     else:
+        inp = tf.keras.layers.Input(shape=[IMG_SIZE, IMG_SIZE, OUTPUT_CHANNELS], name='input_image')
         inputs = inp
-    x = inputs
+        x = inputs
 
     # Primeiras três convoluções adaptadas para IMG_SIZE x IMG_SIZE
     x = tf.keras.layers.Conv2D(16, (1 , 1), strides=1, kernel_initializer=initializer, padding = 'same', kernel_constraint = constraint)(x) # (bs, 16, IMG_SIZE, IMG_SIZE)

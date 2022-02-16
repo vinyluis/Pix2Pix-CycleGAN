@@ -260,6 +260,20 @@ def cycle_test(dataset, gen_fwd, gen_bkw, ncycles, npictures, folder, start = 'A
 
 ## Memória
 
+def print_used_memory(device = 'GPU:0'):
+    mem_info = tf.config.experimental.get_memory_info(device)
+
+    mem_info_current_bytes = mem_info['current']
+    mem_info_current_kbytes = mem_info_current_bytes / 1024
+    mem_info_current_mbytes = mem_info_current_kbytes / 1024
+    
+    mem_info_peak_bytes = mem_info['peak']
+    mem_info_peak_kbytes = mem_info_peak_bytes / 1024
+    mem_info_peak_mbytes = mem_info_peak_kbytes / 1024
+    
+    print(f"Uso de memória: Current = {mem_info_current_mbytes:,.2f} MB, Peak = {mem_info_peak_mbytes:,.2f} MB")
+    return {"current_memory_mbytes" : mem_info_current_mbytes, "peak_memory_mbytes" : mem_info_peak_mbytes}
+
 def get_model_memory_usage(batch_size, model):
 
     """

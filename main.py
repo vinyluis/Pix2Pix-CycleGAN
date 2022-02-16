@@ -27,8 +27,8 @@ wandb_project = 'pix2pix'
 if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
     raise utils.ProjectError(wandb_project)
 
-wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
-# wandb.init(project=wandb_project, entity='vinyluis', mode="online")
+# wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
+wandb.init(project=wandb_project, entity='vinyluis', mode="online")
 
 #%% CONFIG TENSORFLOW
 
@@ -63,9 +63,8 @@ config.TRAIN = True
 config.FIRST_EPOCH = 1
 config.EPOCHS = 2
 config.LEARNING_RATE = 1e-4
-config.ADAM_BETA_1 = 0.5
 config.LAMBDA_GP = 10 # Regulador do gradient penalty
-# BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
+# ADAM_BETA_1, BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
 
 # Parâmetros das métricas
 config.EVALUATE_IS = True
@@ -109,7 +108,7 @@ SHUTDOWN_AFTER_FINISH = False # Controla se o PC será desligado quando o códig
 #%% CONTROLE DA ARQUITETURA
 
 # Código do experimento (se não houver, deixar "")
-config.exp = "Teste "
+config.exp = "P04A"
 
 # Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
 config.gen_model = 'unet'
@@ -118,7 +117,7 @@ config.gen_model = 'unet'
 config.net_type = 'pix2pix'
 
 # Tipo de loss. Possíveis = "patchgan" ou "wgan-gp"
-config.loss_type = 'patchgan'
+config.loss_type = 'wgan-gp'
 
 # Valida se o experimento é coerente com o projeto wandb selecionado
 if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan') 
@@ -129,6 +128,14 @@ if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan')
 if config.gen_model == 'cyclegan':
     if not (config.NUM_RESIDUAL_BLOCKS == 6 or config.NUM_RESIDUAL_BLOCKS == 9):
         raise BaseException("O número de blocos residuais do gerador CycleGAN não está correto. Opções = 6 ou 9.") 
+
+# Define o BETA_1 do ADAM de acordo com o tipo de loss
+if config.loss_type == 'patchgan':
+    config.ADAM_BETA_1 = 0.5
+elif config.loss_type == 'wgan-gp':
+    config.ADAM_BETA_1 = 0.9
+else:
+    config.ADAM_BETA_1 = 0.9
 
 #%% PREPARA AS PASTAS
 
@@ -211,23 +218,45 @@ Ao usar os datasets de carros, setar USE_CACHE em False
 
 # Definição do BATCH_SIZE
 if config.net_type == 'cyclegan':
-    if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
-        config.BATCH_SIZE = 4
-    elif config.gen_model == 'cyclegan':
-        config.BATCH_SIZE = 3
+    if config.loss_type == 'patchgan':
+        if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
+            BATCH_SIZE = 4
+        elif config.gen_model == 'cyclegan':
+            BATCH_SIZE = 3
+        else:
+            raise BaseException("Gerador não definido")
+    elif config.loss_type == 'wgan-gp':
+        if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
+            BATCH_SIZE = 3
+        elif config.gen_model == 'cyclegan':
+            BATCH_SIZE = 2
+        else:
+            raise BaseException("Gerador não definido")
     else:
-        config.BATCH_SIZE = 1
+        raise BaseException("Loss não definida")
 
 elif config.net_type == 'pix2pix':
-    if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
-        config.BATCH_SIZE = 12
-    elif config.gen_model == 'cyclegan':
-        config.BATCH_SIZE = 6
+    if config.loss_type == 'patchgan':
+        if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
+            BATCH_SIZE = 12
+        elif config.gen_model == 'cyclegan':
+            BATCH_SIZE = 6
+        else:
+            raise BaseException("Gerador não definido")
+    elif config.loss_type == 'wgan-gp':
+        if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
+            BATCH_SIZE = 4
+        elif config.gen_model == 'cyclegan':
+            BATCH_SIZE = 2
+        else:
+            raise BaseException("Gerador não definido")
     else:
-        config.BATCH_SIZE = 10
+        raise BaseException("Loss não definida")
 
 else:
-    config.BATCH_SIZE = 10
+    raise BaseException("Tipo de rede não definida")
+
+config.BATCH_SIZE = BATCH_SIZE
 
 
 # Definiçãodo BUFFER_SIZE
@@ -452,8 +481,8 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
             disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.discriminator_loss(disc_real_a, disc_fake_a)
             disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.discriminator_loss(disc_real_b, disc_fake_b)
         elif config.loss_type == 'wgan-gp':
-            disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.loss_wgangp_discriminator(disc_a, disc_real_a, disc_fake_a, real_a, fake_a, config.LAMBDA_GP)
-            disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.loss_wgangp_discriminator(disc_b, disc_real_b, disc_fake_b, real_b, fake_b, config.LAMBDA_GP)
+            disc_a_loss, disc_a_real_loss, disc_a_fake_loss, gp_a = losses.loss_wgangp_discriminator(disc_a, disc_real_a, disc_fake_a, real_a, fake_a, config.LAMBDA_GP)
+            disc_b_loss, disc_b_real_loss, disc_b_fake_loss, gp_b = losses.loss_wgangp_discriminator(disc_b, disc_real_b, disc_fake_b, real_b, fake_b, config.LAMBDA_GP)
     
     # Calcula os gradientes
     gen_g_gradients = tape.gradient(total_gen_g_loss, gen_g.trainable_variables)
@@ -485,6 +514,9 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
         'disc_a_fake_train': disc_a_fake_loss,
         'disc_b_fake_train': disc_b_fake_loss
     }
+    if config.loss_type == 'wgan-gp':
+        loss_dict['gp_a'] = gp_a
+        loss_dict['gp_b'] = gp_b
 
     return loss_dict
 
@@ -554,8 +586,8 @@ def evaluate_validation_losses_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, re
         disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.discriminator_loss(disc_real_a, disc_fake_a)
         disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.discriminator_loss(disc_real_b, disc_fake_b)
     elif config.loss_type == 'wgan-gp':
-        disc_a_loss, disc_a_real_loss, disc_a_fake_loss = losses.loss_wgangp_discriminator(disc_a, disc_real_a, disc_fake_a, real_a, fake_a, config.LAMBDA_GP)
-        disc_b_loss, disc_b_real_loss, disc_b_fake_loss = losses.loss_wgangp_discriminator(disc_b, disc_real_b, disc_fake_b, real_b, fake_b, config.LAMBDA_GP)
+        disc_a_loss, disc_a_real_loss, disc_a_fake_loss, gp_a = losses.loss_wgangp_discriminator(disc_a, disc_real_a, disc_fake_a, real_a, fake_a, config.LAMBDA_GP)
+        disc_b_loss, disc_b_real_loss, disc_b_fake_loss, gp_b = losses.loss_wgangp_discriminator(disc_b, disc_real_b, disc_fake_b, real_b, fake_b, config.LAMBDA_GP)
 
     # Cria um dicionário das losses
     loss_dict = {
@@ -573,6 +605,9 @@ def evaluate_validation_losses_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, re
         'disc_a_fake_val': disc_a_fake_loss,
         'disc_b_fake_val': disc_b_fake_loss
     }
+    if config.loss_type == 'wgan-gp':
+        loss_dict['gp_a'] = gp_a
+        loss_dict['gp_b'] = gp_b
 
     return loss_dict
 
@@ -613,6 +648,11 @@ def fit_cyclegan(FIRST_EPOCH, EPOCHS, gen_g, gen_f, disc_a, disc_b,
     y_pred_A = []
     y_real_B = []
     y_pred_B = []
+
+    # Uso de memória
+    mem_usage = utils.print_used_memory()
+    wandb.log(mem_usage)
+    print("")
 
     for epoch in range(FIRST_EPOCH, EPOCHS+1):
         t1 = time.time()
@@ -679,10 +719,13 @@ def fit_cyclegan(FIRST_EPOCH, EPOCHS, gen_g, gen_f, disc_a, disc_b,
             val_metrics = {k+"_val": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "_val" no final das keys
             wandb.log(val_metrics)
 
+        # Uso de memória
+        mem_usage = utils.print_used_memory()
+        wandb.log(mem_usage)
+
+        # Loga o tempo de duração da época no wandb
         dt = time.time() - t1
         print ('\nTempo usado para a época {} foi de {:.2f} min ({:.2f} sec)\n'.format(epoch, dt/60, dt))
-        
-        # Loga o tempo de duração da época no wandb
         wandb.log({'epoch time (s)': dt, 'epoch time (min)': dt/60})
 
 
@@ -703,13 +746,13 @@ def train_step_pix2pix(gen, disc, gen_optimizer, disc_optimizer, input_img, targ
           
         disc_real_output = disc([input_img, target], training=True)
         disc_fake_output = disc([input_img, fake_img], training=True)
-        
+
         if config.loss_type == 'patchgan':
             gen_total_loss, gen_gan_loss, gen_l1_loss = losses.generator_loss_pix2pix(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
             disc_loss, disc_real_loss, disc_fake_loss = losses.discriminator_loss(disc_real_output, disc_fake_output)
         elif config.loss_type == 'wgan-gp':
             gen_total_loss, gen_gan_loss, gen_l1_loss = losses.loss_wgangp_generator_supervised(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
-            disc_loss, disc_real_loss, disc_fake_loss = losses.loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_fake_output, input_img, fake_img, target, config.LAMBDA_GP)
+            disc_loss, disc_real_loss, disc_fake_loss, gp = losses.loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_fake_output, input_img, fake_img, target, config.LAMBDA_GP)
 
     generator_gradients = gen_tape.gradient(gen_total_loss, gen.trainable_variables)
     discriminator_gradients = disc_tape.gradient(disc_loss, disc.trainable_variables)
@@ -726,6 +769,8 @@ def train_step_pix2pix(gen, disc, gen_optimizer, disc_optimizer, input_img, targ
         'disc_real_train': disc_real_loss,
         'disc_fake_train': disc_fake_loss,
     }
+    if config.loss_type == 'wgan-gp':
+        loss_dict['gp'] = gp
     
     return loss_dict
 
@@ -748,7 +793,7 @@ def evaluate_validation_losses_pix2pix(gen, disc, input_img, target):
         disc_loss, disc_real_loss, disc_fake_loss = losses.discriminator_loss(disc_real_output, disc_fake_output)
     elif config.loss_type == 'wgan-gp':
         gen_total_loss, gen_gan_loss, gen_l1_loss = losses.loss_wgangp_generator_supervised(disc_fake_output, fake_img, target, config.LAMBDA_PIX2PIX)
-        disc_loss, disc_real_loss, disc_fake_loss = losses.loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_fake_output, input_img, fake_img, target, config.LAMBDA_GP)
+        disc_loss, disc_real_loss, disc_fake_loss, gp = losses.loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_fake_output, input_img, fake_img, target, config.LAMBDA_GP)
 
     # Cria um dicionário das losses
     loss_dict = {
@@ -759,6 +804,8 @@ def evaluate_validation_losses_pix2pix(gen, disc, input_img, target):
         'disc_real_val': disc_real_loss,
         'disc_fake_val': disc_fake_loss,
     }
+    if config.loss_type == 'wgan-gp':
+        loss_dict['gp'] = gp
     
     return loss_dict
 
@@ -791,6 +838,11 @@ def fit_pix2pix(first_epoch, epochs, gen, disc, gen_optimizer, disc_optimizer):
     # Listas para o cálculo da acurácia
     y_real = []
     y_pred = []
+
+    # Uso de memória
+    mem_usage = utils.print_used_memory()
+    wandb.log(mem_usage)
+    print("")
 
     ########## LOOP DE TREINAMENTO ##########
     for epoch in range(first_epoch, epochs+1):
@@ -852,6 +904,10 @@ def fit_pix2pix(first_epoch, epochs, gen, disc, gen_optimizer, disc_optimizer):
             val_metrics = {k+"_val": v for k, v in metric_results.items()} # Renomeia o dicionário para incluir "val" no final das keys
             wandb.log(val_metrics)
 
+        # Uso de memória
+        mem_usage = utils.print_used_memory()
+        wandb.log(mem_usage)
+
         # Loga o tempo de duração da época no wandb
         dt = time.time() - t1
         print ('Tempo usado para a época {} foi de {:.2f} min ({:.2f} sec)\n'.format(epoch, dt/60, dt))
@@ -894,8 +950,8 @@ if config.net_type == 'cyclegan':
         discriminator_a = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
         discriminator_b = networks.CycleGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
     elif config.loss_type == 'wgan-gp':
-        discriminator_a = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = True, output_type = 'unit', conditional = False)
-        discriminator_b = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = True, output_type = 'unit', conditional = False)
+        discriminator_a = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = False, output_type = 'unit', conditional = False)
+        discriminator_b = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = False, output_type = 'unit', conditional = False)
     else:
         raise BaseException("Tipo de loss não determinado")
 
@@ -903,7 +959,7 @@ elif config.net_type == 'pix2pix':
     if config.loss_type == 'patchgan':
         discriminator = networks.Pix2Pix_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, norm_type='instancenorm')
     elif config.loss_type == 'wgan-gp':
-        discriminator = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = True, output_type = 'unit', conditional = True)
+        discriminator = networks.ProGAN_Discriminator(config.IMG_SIZE, config.OUTPUT_CHANNELS, constrained = False, output_type = 'unit', conditional = True)
     else:
         raise BaseException("Tipo de loss não determinado")
 
@@ -927,9 +983,10 @@ else:
 
 
 #%% CONSUMO DE MEMÓRIA
-print("Uso de memória dos modelos:")
 
 if config.net_type == 'cyclegan':
+
+    print("Uso de memória dos modelos:")
     gen_g_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, generator_g)
     gen_f_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, generator_f)
     disc_a_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, discriminator_a)
@@ -938,42 +995,48 @@ if config.net_type == 'cyclegan':
     print(f"Gerador F       = {gen_f_mem_usage:,.2f} GB")
     print(f"Discriminador A = {disc_a_mem_usage:,.2f} GB")
     print(f"Discriminador B = {disc_b_mem_usage:,.2f} GB")
+
+    print("Uso de memória dos datasets:")
+    train_a_mem_usage = utils.get_full_dataset_memory_usage(config.TRAIN_SIZE_A, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = train_A.element_spec.dtype)
+    train_b_mem_usage = utils.get_full_dataset_memory_usage(config.TRAIN_SIZE_B, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = train_B.element_spec.dtype)
+    test_a_mem_usage = utils.get_full_dataset_memory_usage(config.TEST_SIZE_A, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = test_A.element_spec.dtype)
+    test_b_mem_usage = utils.get_full_dataset_memory_usage(config.TEST_SIZE_B, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = test_B.element_spec.dtype)
+    val_a_mem_usage = utils.get_full_dataset_memory_usage(config.VAL_SIZE_A, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = val_A.element_spec.dtype)
+    val_b_mem_usage = utils.get_full_dataset_memory_usage(config.VAL_SIZE_B, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = val_B.element_spec.dtype)
+    print(f"Train A dataset = {train_a_mem_usage:,.2f} GB")
+    print(f"Train B dataset = {train_b_mem_usage:,.2f} GB")
+    print(f"Test A dataset  = {test_a_mem_usage:,.2f} GB")
+    print(f"Test B dataset  = {test_b_mem_usage:,.2f} GB")
+    print(f"Val A dataset   = {val_a_mem_usage:,.2f} GB")
+    print(f"Val B dataset   = {val_b_mem_usage:,.2f} GB")
+    print("")
+
+    wandb.log({"gen_g_mem_usage_gbytes": gen_g_mem_usage, "gen_f_mem_usage_gbytes": gen_f_mem_usage, 
+            "disc_a_mem_usage_gbbytes" : disc_a_mem_usage, "disc_b_mem_usage_gbbytes" : disc_b_mem_usage, 
+            "train_a_mem_usage_gbytes" : train_a_mem_usage, "train_b_mem_usage_gbytes" : train_b_mem_usage, 
+            "test_a_mem_usage_gbytes" : test_a_mem_usage, "test_b_mem_usage_gbytes" : test_b_mem_usage,
+            "val_a_mem_usage_gbytes" : val_a_mem_usage, "val_b_mem_usage_gbytes" : val_b_mem_usage})
+
 elif config.net_type == 'pix2pix':
+
+    print("Uso de memória dos modelos:")
     gen_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, generator)
     disc_mem_usage = utils.get_model_memory_usage(config.BATCH_SIZE, discriminator)
     print(f"Gerador         = {gen_mem_usage:,.2f} GB")
     print(f"Discriminador   = {disc_mem_usage:,.2f} GB")
 
-print("Uso de memória dos datasets:")
-train_ds_mem_usage = utils.get_full_dataset_memory_usage(config.TRAIN_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = train_dataset.element_spec.dtype)
-test_ds_mem_usage = utils.get_full_dataset_memory_usage(config.TEST_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = test_dataset.element_spec.dtype)
-val_ds_mem_usage = utils.get_full_dataset_memory_usage(config.VAL_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = val_dataset.element_spec.dtype)
-print(f"Train dataset   = {train_ds_mem_usage:,.2f} GB")
-print(f"Test dataset    = {test_ds_mem_usage:,.2f} GB")
-print(f"Val dataset     = {val_ds_mem_usage:,.2f} GB")
-
-if config.net_type == 'cyclegan':
-    print("Uso de memória básico em runtime:")
-    runtime_base_memory = (gen_g_mem_usage + gen_f_mem_usage + disc_a_mem_usage + disc_b_mem_usage +
-                           train_ds_mem_usage + val_ds_mem_usage)
-    print(f"gen + disc + train_ds + val_ds = {runtime_base_memory:,.2f} GB")
-    print("")
-
-    wandb.log({"gen_g_mem_usage_gbytes": gen_g_mem_usage, "gen_f_mem_usage_gbytes": gen_f_mem_usage, 
-            "disc_a_mem_usage_gbbytes" : disc_a_mem_usage, "disc_b_mem_usage_gbbytes" : disc_b_mem_usage, 
-            "train_ds_mem_usage_gbytes" : train_ds_mem_usage, "test_ds_mem_usage_gbytes" : test_ds_mem_usage,
-            "val_ds_mem_usage_gbytes" : val_ds_mem_usage})
-
-elif config.net_type == 'pix2pix':
-    print("Uso de memória básico em runtime:")
-    runtime_base_memory = (gen_mem_usage + disc_mem_usage + train_ds_mem_usage + val_ds_mem_usage)
-    print(f"gen + disc + train_ds + val_ds = {runtime_base_memory:,.2f} GB")
+    print("Uso de memória dos datasets:")
+    # O size * 2 é porque o dataset gera duas imagens (pareadas)
+    train_ds_mem_usage = utils.get_full_dataset_memory_usage(config.TRAIN_SIZE * 2, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = train_dataset.element_spec[0].dtype)
+    test_ds_mem_usage = utils.get_full_dataset_memory_usage(config.TEST_SIZE * 2, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = test_dataset.element_spec[0].dtype)
+    val_ds_mem_usage = utils.get_full_dataset_memory_usage(config.VAL_SIZE * 2, config.IMG_SIZE, config.OUTPUT_CHANNELS, data_type = val_dataset.element_spec[0].dtype)
+    print(f"Train dataset   = {train_ds_mem_usage:,.2f} GB")
+    print(f"Test dataset    = {test_ds_mem_usage:,.2f} GB")
+    print(f"Val dataset     = {val_ds_mem_usage:,.2f} GB")
     print("")
 
     wandb.log({"gen_mem_usage_gbytes": gen_mem_usage, "disc_mem_usage_gbbytes" : disc_mem_usage, "train_ds_mem_usage_gbytes" : train_ds_mem_usage,
             "test_ds_mem_usage_gbytes" : test_ds_mem_usage, "val_ds_mem_usage_gbytes" : val_ds_mem_usage})
-
-
 
 #%% CHECKPOINTS
 
