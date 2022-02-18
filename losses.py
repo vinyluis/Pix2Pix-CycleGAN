@@ -13,6 +13,7 @@ BCE = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 ## LOSSES 
 
 # Loss adversária do discriminador
+@tf.function
 def discriminator_loss(disc_real_output, disc_fake_output):
     """Calcula a loss dos discriminadores usando BCE.
 
@@ -26,6 +27,7 @@ def discriminator_loss(disc_real_output, disc_fake_output):
     return total_disc_loss, real_loss, fake_loss
 
 # Loss adversária do gerador
+@tf.function
 def generator_loss(disc_fake_output):
     """Calcula a loss do gerador usando BCE.
 
@@ -36,6 +38,7 @@ def generator_loss(disc_fake_output):
     return BCE(tf.ones_like(disc_fake_output), disc_fake_output)
 
 # Loss de consistência de ciclo - CycleGAN
+@tf.function
 def cycle_loss(real_image, cycled_image):
     """Calcula a loss de consistência de ciclo da rede.
 
@@ -47,6 +50,7 @@ def cycle_loss(real_image, cycled_image):
     return cycle_loss
 
 # Identity loss - CycleGAN
+@tf.function
 def identity_loss(real_image, same_image):
     """Calcula a loss de identidade dos geradores
 
@@ -58,6 +62,7 @@ def identity_loss(real_image, same_image):
     return id_loss
 
 # Loss completa de gerador
+@tf.function
 def generator_loss_pix2pix(disc_fake_output, fake_img, target, lambda_l1):
     """Calcula a loss de gerador usando BCE no framework Pix2Pix.
 
@@ -82,12 +87,14 @@ os autores criaram o conceito de Gradient Penalty para manter essa condição de
 - O gerador tem a MESMA loss da WGAN
 - O discriminador, em vez de ter seus pesos limitados pelo clipping, ganha uma penalidade de gradiente que deve ser calculada
 '''
+@tf.function
 def loss_wgangp_generator_unsupervised(disc_generated_output):
     """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o gerador."""
     # O output do discriminador é de tamanho BATCH_SIZE x 1, o valor esperado é a média
     gan_loss = -tf.reduce_mean(disc_generated_output)
     return gan_loss
 
+@tf.function
 def loss_wgangp_generator_supervised(disc_generated_output, gen_output, target, lambda_l1):
     """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o gerador."""
     # O output do discriminador é de tamanho BATCH_SIZE x 1, o valor esperado é a média
@@ -96,6 +103,7 @@ def loss_wgangp_generator_supervised(disc_generated_output, gen_output, target, 
     total_gen_loss = gan_loss + (lambda_l1 * l1_loss)
     return total_gen_loss, gan_loss, l1_loss
 
+@tf.function
 def loss_wgangp_discriminator(disc, disc_real_output, disc_generated_output, real_img, generated_img, lambda_gp):
     """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o discriminador."""
     fake_loss = tf.reduce_mean(disc_generated_output)
@@ -104,6 +112,7 @@ def loss_wgangp_discriminator(disc, disc_real_output, disc_generated_output, rea
     total_disc_loss = total_disc_loss = -(real_loss - fake_loss) + lambda_gp * gp + (0.001 * tf.reduce_mean(disc_real_output**2))
     return total_disc_loss, real_loss, fake_loss, gp
 
+@tf.function
 def loss_wgangp_discriminator_conditional(disc, disc_real_output, disc_generated_output, real_img, generated_img, target, lambda_gp):
     """Calcula a loss de wasserstein com gradient-penalty (WGAN-GP) para o discriminador."""
     fake_loss = tf.reduce_mean(disc_generated_output)

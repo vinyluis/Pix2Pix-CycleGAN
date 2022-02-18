@@ -4,19 +4,35 @@
 ## Created for the Master's degree dissertation
 ## Vinícius Trevisan 2020 - 2022
 
-### Imports
+### --- Imports
 import os
 import time
 import numpy as np
 from math import ceil
+import traceback
 
+### --- Tensorflow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 import tensorflow as tf
 
-# Módulos próprios
+# Verifica se a GPU está disponível:
+print("---- VERIFICA SE A GPU ESTÁ DISPONÍVEL:")
+physical_devices = tf.config.list_physical_devices('GPU')
+print(physical_devices)
+print("")
+
+# Verifica a versão do Tensorflow
+tf_version = tf. __version__
+print(f"Utilizando Tensorflow v {tf_version}")
+print("")
+
+# Habilita a alocação de memória dinâmica
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+### --- Módulos próprios
 import networks, utils, metrics, losses
 
-#%% Weights & Biases
+### --- Weights & Biases
 import wandb
 
 # Define o projeto. Como são abordagens diferentes, dois projetos diferentes foram criados no wandb
@@ -27,19 +43,16 @@ wandb_project = 'pix2pix'
 if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
     raise utils.ProjectError(wandb_project)
 
-# wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
-wandb.init(project=wandb_project, entity='vinyluis', mode="online")
+wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
+# wandb.init(project=wandb_project, entity='vinyluis', mode="online")
 
-#%% CONFIG TENSORFLOW
-
-# Verifica se a GPU está disponível:
-print("---- VERIFICA SE A GPU ESTÁ DISPONÍVEL:")
-print(tf.config.list_physical_devices('GPU'))
-print("")
 
 #%% HIPERPARÂMETROS E CONFIGURAÇÕES
 
 config = wandb.config # Salva os hiperparametros no Weights & Biases também
+
+# Salva a versão do TF que foi usada no experimento
+config.tf_version = tf_version
 
 # Root do sistema
 base_root = ""
@@ -61,7 +74,7 @@ config.LAMBDA_PIX2PIX = 100 # Controle da proporção da loss L1 com a loss adve
 # Parâmetros de treinamento
 config.TRAIN = True
 config.FIRST_EPOCH = 1
-config.EPOCHS = 2
+config.EPOCHS = 10
 config.LEARNING_RATE = 1e-4
 config.LAMBDA_GP = 10 # Regulador do gradient penalty
 # ADAM_BETA_1, BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
@@ -245,9 +258,9 @@ elif config.net_type == 'pix2pix':
             raise BaseException("Gerador não definido")
     elif config.loss_type == 'wgan-gp':
         if config.gen_model == 'unet' or config.gen_model == 'pix2pix':
-            BATCH_SIZE = 4
+            BATCH_SIZE = 5
         elif config.gen_model == 'cyclegan':
-            BATCH_SIZE = 2
+            BATCH_SIZE = 3
         else:
             raise BaseException("Gerador não definido")
     else:
@@ -1086,11 +1099,30 @@ else:
 
 if config.TRAIN:
     if config.net_type == 'cyclegan':
-        fit_cyclegan(FIRST_EPOCH, EPOCHS, generator_g, generator_f, discriminator_a, discriminator_b,
+        try:
+            fit_cyclegan(FIRST_EPOCH, EPOCHS, generator_g, generator_f, discriminator_a, discriminator_b,
                     generator_g_optimizer, generator_f_optimizer, discriminator_a_optimizer, discriminator_b_optimizer)
+        except Exception as e:
+            # Printa  o uso de memória
+            mem_usage = utils.print_used_memory()
+            wandb.log(mem_usage)
+            # Printa o traceback
+            traceback.print_exc()
+            # Levanta a exceção
+            raise BaseException("Erro durante o treinamento")
 
     elif config.net_type == 'pix2pix':
-        fit_pix2pix(FIRST_EPOCH, EPOCHS, generator, discriminator, generator_optimizer, discriminator_optimizer)
+        try:
+            fit_pix2pix(FIRST_EPOCH, EPOCHS, generator, discriminator, generator_optimizer, discriminator_optimizer)
+        except Exception as e:
+            # Printa  o uso de memória
+            print("")
+            mem_usage = utils.print_used_memory()
+            wandb.log(mem_usage)
+            # Printa o traceback
+            traceback.print_exc()
+            # Levanta a exceção
+            raise BaseException("Erro durante o treinamento")
 
     else:
         raise utils.ArchitectureError(config.net_type)
