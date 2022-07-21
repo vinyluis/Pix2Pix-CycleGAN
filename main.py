@@ -13,32 +13,12 @@ import time
 import numpy as np
 from math import ceil
 import traceback
-import wandb
+
+# --- Tensorflow
 
 # Silencia o TF (https://stackoverflow.com/questions/35911252/disable-tensorflow-debugging-information)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import tensorflow as tf
-
-# --- Módulos próprios
-import networks
-import utils
-import metrics
-import losses
-
-# --- Weights & Biases
-
-# Define o projeto. Como são abordagens diferentes, dois projetos diferentes foram criados no wandb
-# Possíveis: 'cyclegan' e 'pix2pix'
-wandb_project = 'cyclegan'
-
-# Valida o projeto
-if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
-    raise utils.ProjectError(wandb_project)
-
-wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
-# wandb.init(project=wandb_project, entity='vinyluis', mode="online")
-
-# --- Tensorflow
 
 # Verifica se a GPU está disponível:
 print("---- VERIFICA SE A GPU ESTÁ DISPONÍVEL:")
@@ -53,6 +33,26 @@ print("")
 
 # Habilita a alocação de memória dinâmica
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+# --- Módulos próprios
+import networks
+import utils
+import metrics
+import losses
+
+# --- Weights & Biases
+import wandb
+
+# Define o projeto. Como são abordagens diferentes, dois projetos diferentes foram criados no wandb
+# Possíveis: 'cyclegan' e 'pix2pix'
+wandb_project = 'cyclegan'
+
+# Valida o projeto
+if not(wandb_project == 'cyclegan' or wandb_project == 'pix2pix'):
+    raise utils.ProjectError(wandb_project)
+
+# wandb.init(project=wandb_project, entity='vinyluis', mode="disabled")
+wandb.init(project=wandb_project, entity='vinyluis', mode="online")
 
 # %% HIPERPARÂMETROS E CONFIGURAÇÕES
 
@@ -76,7 +76,7 @@ config.IMG_SHAPE = [config.IMG_SIZE, config.IMG_SIZE, config.OUTPUT_CHANNELS]
 config.NUM_RESIDUAL_BLOCKS = 6  # Número de blocos residuais do gerador CycleGAN
 config.GAMMA_CYCLEGAN = 10  # Controle da proporção das losses de consistência de ciclo e identidade na CycleGAN
 config.USE_ID_LOSS = True  # Controla se será usada a Loss de Identidade da CycleGAN
-config.ASSYMETRY_RATIO = 1  # Controla a assimetria do treinamento da CycleGAN. Se maior que 1, A->B é mais importante do que B->A
+config.ASSYMETRY_RATIO = 1 / 10  # Controla a assimetria do treinamento da CycleGAN. Se maior que 1, A->B é mais importante do que B->A
 
 # Parâmetros da Pix2Pix
 config.LAMBDA_PIX2PIX = 100  # Controle da proporção da loss L1 com a loss adversária do gerador na Pix2Pix
@@ -84,7 +84,7 @@ config.LAMBDA_PIX2PIX = 100  # Controle da proporção da loss L1 com a loss adv
 # Parâmetros de treinamento
 config.TRAIN = True
 config.FIRST_EPOCH = 1
-config.EPOCHS = 10
+config.EPOCHS = 5
 config.LEARNING_RATE = 1e-4
 config.LAMBDA_GP = 10  # Regulador do gradient penalty
 # ADAM_BETA_1, BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
@@ -131,17 +131,17 @@ SHUTDOWN_AFTER_FINISH = False  # Controla se o PC será desligado quando o códi
 # %% CONTROLE DA ARQUITETURA
 
 # Código do experimento (se não houver, deixar "")
-config.exp_group = "C07"
-config.exp = "C07A"
+config.exp_group = "LANDSCAPE"
+config.exp = "LANDSCAPE"
 
 # Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
-config.gen_model = 'unet'
+config.gen_model = 'cyclegan'
 
 # Tipo de experimento. Possíveis = 'pix2pix', 'cyclegan'
 config.net_type = 'cyclegan'
 
 # Tipo de loss. Possíveis = "patchgan" ou "wgan-gp"
-config.loss_type = 'wgan-gp'
+config.loss_type = 'patchgan'
 
 # Valida se o experimento é coerente com o projeto wandb selecionado
 if not((wandb_project == 'cyclegan' and config.net_type == 'cyclegan')
@@ -216,6 +216,7 @@ cars_folder = dataset_root + '60k_car_dataset_selected_edges_split/'
 simpsons_folder = dataset_root + 'simpsons_image_dataset/'
 anime_faces_folder = dataset_root + 'anime_faces_edges_split/'
 insects_folder = dataset_root + 'flickr_internetarchivebookimages_prepared/'
+landscapes_folder = dataset_root + 'landscape2painting/'
 
 # Datasets Pix2Pix
 cars_paired_folder = dataset_root + '60k_car_dataset_selected_edges/'
@@ -224,7 +225,7 @@ cars_paired_folder_complete = dataset_root + '60k_car_dataset_edges/'
 #############################
 # --- Dataset escolhido --- #
 #############################
-dataset_folder = simpsons_folder
+dataset_folder = landscapes_folder
 
 # Pastas de treino, teste e validação
 train_folder = dataset_folder + 'train'
@@ -285,7 +286,6 @@ else:
 
 config.BATCH_SIZE = BATCH_SIZE
 
-
 # Definiçãodo BUFFER_SIZE
 # config.BUFFER_SIZE = 100
 config.BUFFER_SIZE = config.BATCH_SIZE
@@ -305,7 +305,8 @@ print("Carregando o dataset...")
 # Valida os datasets usados
 if config.net_type == 'cyclegan':
     if not(dataset_folder == cars_folder or dataset_folder == simpsons_folder
-           or dataset_folder == anime_faces_folder or dataset_folder == insects_folder):
+           or dataset_folder == anime_faces_folder or dataset_folder == insects_folder
+           or dataset_folder == landscapes_folder):
         raise utils.DatasetError(config.net_type, dataset_folder)
 
 elif config.net_type == 'pix2pix':
@@ -477,9 +478,9 @@ def train_step_cyclegan(gen_g, gen_f, disc_a, disc_b, real_a, real_b,
         total_cycle_loss = losses.cycle_loss(real_a, cycled_a) + losses.cycle_loss(real_b, cycled_b)
 
         # Calcula a loss completa de gerador considerando a assimetria
-        # Se config.ASSYMETRY_RATIO > 1, então A->B é mais importante que B->A
-        # Se config.ASSYMETRY_RATIO < 1, então A->B é menos importante que B->A
-        # Se config.ASSYMETRY_RATIO = 1, então A->B e B->A tem a mesma importância
+        # Se config.ASSYMETRY_RATIO > 1, então G: A->B é mais importante que F: B->A
+        # Se config.ASSYMETRY_RATIO < 1, então G: A->B é menos importante que F: B->A
+        # Se config.ASSYMETRY_RATIO = 1, então G: A->B e F: B->A tem a mesma importância
         if config.ASSYMETRY_RATIO > 1:
             total_gen_g_loss = gen_g_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
             total_gen_f_loss = (1 / config.ASSYMETRY_RATIO) * gen_f_loss + config.GAMMA_CYCLEGAN * total_cycle_loss
