@@ -84,7 +84,7 @@ config.LAMBDA_PIX2PIX = 100  # Controle da proporção da loss L1 com a loss adv
 # Parâmetros de treinamento
 config.TRAIN = True
 config.FIRST_EPOCH = 1
-config.EPOCHS = 5
+config.EPOCHS = 10
 config.LEARNING_RATE = 1e-4
 config.LAMBDA_GP = 10  # Regulador do gradient penalty
 # ADAM_BETA_1, BUFFER_SIZE, BATCH_SIZE e USE_CACHE serão definidos em código
@@ -131,11 +131,11 @@ SHUTDOWN_AFTER_FINISH = False  # Controla se o PC será desligado quando o códi
 # %% CONTROLE DA ARQUITETURA
 
 # Código do experimento (se não houver, deixar "")
-config.exp_group = "LANDSCAPE"
-config.exp = "LANDSCAPE"
+config.exp_group = "PAINTER"
+config.exp = "MONET_E01_"
 
 # Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
-config.gen_model = 'cyclegan'
+config.gen_model = 'unet'
 
 # Tipo de experimento. Possíveis = 'pix2pix', 'cyclegan'
 config.net_type = 'cyclegan'
@@ -165,7 +165,7 @@ else:
 
 # Prepara o nome da pasta que vai salvar o resultado dos experimentos
 experiment_root = base_root + 'Experimentos/'
-experiment_folder = experiment_root + 'Exp_'
+experiment_folder = experiment_root + 'EXP_'
 if config.exp != "":
     experiment_folder += config.exp
     experiment_folder += '_'
@@ -173,7 +173,7 @@ experiment_folder += config.net_type
 experiment_folder += '_gen_'
 experiment_folder += config.gen_model
 if config.net_type == 'cyclegan':
-    experiment_folder += '_lambda_'
+    experiment_folder += '_gamma_'
     experiment_folder += str(config.GAMMA_CYCLEGAN)
 experiment_folder += "/"
 
@@ -217,6 +217,7 @@ simpsons_folder = dataset_root + 'simpsons_image_dataset/'
 anime_faces_folder = dataset_root + 'anime_faces_edges_split/'
 insects_folder = dataset_root + 'flickr_internetarchivebookimages_prepared/'
 landscapes_folder = dataset_root + 'landscape2painting/'
+monet_folder = dataset_root + 'im_something_of_a_painter_myself/'
 
 # Datasets Pix2Pix
 cars_paired_folder = dataset_root + '60k_car_dataset_selected_edges/'
@@ -225,7 +226,7 @@ cars_paired_folder_complete = dataset_root + '60k_car_dataset_edges/'
 #############################
 # --- Dataset escolhido --- #
 #############################
-dataset_folder = landscapes_folder
+dataset_folder = monet_folder
 
 # Pastas de treino, teste e validação
 train_folder = dataset_folder + 'train'
@@ -306,7 +307,7 @@ print("Carregando o dataset...")
 if config.net_type == 'cyclegan':
     if not(dataset_folder == cars_folder or dataset_folder == simpsons_folder
            or dataset_folder == anime_faces_folder or dataset_folder == insects_folder
-           or dataset_folder == landscapes_folder):
+           or dataset_folder == landscapes_folder or dataset_folder == monet_folder):
         raise utils.DatasetError(config.net_type, dataset_folder)
 
 elif config.net_type == 'pix2pix':

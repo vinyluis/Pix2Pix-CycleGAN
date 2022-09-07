@@ -7,21 +7,23 @@ import numpy as np
 import os
 from os.path import isfile, join
 import time
+from tqdm import tqdm
 
 # Parametros e constantes
 test_ratio = 0.05
 val_ratio = 0.15
 img_size = 256
-file_prefix_A = "simpsons_full_"
-file_prefix_B = "simpsons_sketch_"
+file_prefix_A = "photo_"
+file_prefix_B = "monet_"
 print_interval = 5
+use_three_crop = False
 
 # Preparação das pastas
-read_folder_prefix = "F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/00_Datasets/simpsons_image_dataset_unprepared/"
-read_folder_A = read_folder_prefix + "Classe A/"
-read_folder_B = read_folder_prefix + "Classe B/"
+read_folder_prefix = "F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/0_Datasets/im_something_of_a_painter_myself_unprepared/im_something_of_a_painter_myself_jpg/"
+read_folder_A = read_folder_prefix + "photo_jpg/"
+read_folder_B = read_folder_prefix + "monet_jpg/"
 
-save_folder_prefix = "F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/00_Datasets/simpsons_image_dataset/"
+save_folder_prefix = "F:/Vinicius - HD/OneDrive/Vinicius/01-Estudos/0_Datasets/im_something_of_a_painter_myself/"
 save_folder_train = save_folder_prefix + "train"
 save_folder_test = save_folder_prefix + "test"
 save_folder_val = save_folder_prefix + "val"
@@ -184,12 +186,13 @@ print("Encontrado {0} arquivos da classe A".format(num_files_A))
 
 # Para cada arquivo, cria a versão reduzida em forma de quadrado, center crop, left (or top) crop e right (or bottom) crop
 # Assim, para cada arquivo, serão gerados quatro novos arquivos
-c = 1
 t1 = time.time()
-for file in files_A:
+pbar = tqdm(total=num_files_A)
+for i, file in enumerate(files_A):
 
-    if c % print_interval == 0 or c == 1 or c == num_files_A:
-        print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c, num_files_A, 100 * c / num_files_A))
+    # Atualiza a progress bar
+    pbar.update()
+    c = i + 1
 
     # Sorteia se a imagem será imagem de teste, de validação ou de treino
     rnum = np.random.rand()
@@ -205,26 +208,33 @@ for file in files_A:
     image_file = read_folder_A + file
     img = cv.imread(cv.samples.findFile(image_file))
 
-    # Faz o resize e o center crop
-    img_a, img_b, img_c = ThreeCrop(img, img_size)
+    if use_three_crop:
+        # Faz o resize e o center crop
+        img_a, img_b, img_c = ThreeCrop(img, img_size)
 
-    # Faz a versão reduzida em forma de quadrado
-    img_d = ResizeSquare(img, img_size)
+        # Faz a versão reduzida em forma de quadrado
+        img_d = ResizeSquare(img, img_size)
 
-    # Salva os arquivos
-    filename_a = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_a" + ".jpg"
-    cv.imwrite(dest_folder + filename_a, img_a)
+        # Salva os arquivos
+        filename_a = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_a" + ".jpg"
+        cv.imwrite(dest_folder + filename_a, img_a)
 
-    filename_b = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_b" + ".jpg"
-    cv.imwrite(dest_folder + filename_b, img_b)
+        filename_b = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_b" + ".jpg"
+        cv.imwrite(dest_folder + filename_b, img_b)
 
-    filename_c = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_c" + ".jpg"
-    cv.imwrite(dest_folder + filename_c, img_c)
+        filename_c = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_c" + ".jpg"
+        cv.imwrite(dest_folder + filename_c, img_c)
 
-    filename_d = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_d" + ".jpg"
-    cv.imwrite(dest_folder + filename_d, img_d)
+        filename_d = file_prefix_A + str(c).zfill(len(str(num_files_A))) + "_d" + ".jpg"
+        cv.imwrite(dest_folder + filename_d, img_d)
 
-    c = c + 1
+    else:
+        # Faz o resize e o center crop
+        _, _, img_c = ThreeCrop(img, img_size)
+
+        # Salva os arquivos
+        filename_c = file_prefix_A + str(c).zfill(len(str(num_files_A))) + ".jpg"
+        cv.imwrite(dest_folder + filename_c, img_c)
 
 t2 = time.time()
 dt = t2 - t1
@@ -243,12 +253,13 @@ print("Encontrado {0} arquivos da classe B".format(num_files_B))
 
 # Para cada arquivo, cria a versão reduzida em forma de quadrado, center crop, left (or top) crop e right (or bottom) crop
 # Bssim, para cada arquivo, serão gerados quatro novos arquivos
-c = 1
 t1 = time.time()
-for file in files_B:
+pbar = tqdm(total=num_files_B)
+for i, file in enumerate(files_B):
 
-    if c % print_interval == 0 or c == 1 or c == num_files_B:
-        print("[{0:5d} / {1:5d}] {2:5.2f}%".format(c, num_files_B, 100 * c / num_files_B))
+    # Atualiza a progress bar
+    pbar.update()
+    c = i + 1
 
     # Sorteia se a imagem será imagem de teste ou de treino
     rnum = np.random.rand()
@@ -264,26 +275,33 @@ for file in files_B:
     image_file = read_folder_B + file
     img = cv.imread(cv.samples.findFile(image_file))
 
-    # Faz o resize e o center crop
-    img_a, img_b, img_c = ThreeCrop(img, img_size)
+    if use_three_crop:
+        # Faz o resize e o center crop
+        img_a, img_b, img_c = ThreeCrop(img, img_size)
 
-    # Faz a versão reduzida em forma de quadrado
-    img_d = ResizeSquare(img, img_size)
+        # Faz a versão reduzida em forma de quadrado
+        img_d = ResizeSquare(img, img_size)
 
-    # Salva os arquivos
-    filename_a = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_a" + ".jpg"
-    cv.imwrite(dest_folder + filename_a, img_a)
+        # Salva os arquivos
+        filename_a = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_a" + ".jpg"
+        cv.imwrite(dest_folder + filename_a, img_a)
 
-    filename_b = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_b" + ".jpg"
-    cv.imwrite(dest_folder + filename_b, img_b)
+        filename_b = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_b" + ".jpg"
+        cv.imwrite(dest_folder + filename_b, img_b)
 
-    filename_c = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_c" + ".jpg"
-    cv.imwrite(dest_folder + filename_c, img_c)
+        filename_c = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_c" + ".jpg"
+        cv.imwrite(dest_folder + filename_c, img_c)
 
-    filename_d = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_d" + ".jpg"
-    cv.imwrite(dest_folder + filename_d, img_d)
+        filename_d = file_prefix_B + str(c).zfill(len(str(num_files_B))) + "_d" + ".jpg"
+        cv.imwrite(dest_folder + filename_d, img_d)
 
-    c = c + 1
+    else:
+        # Faz o resize e o center crop
+        _, _, img_c = ThreeCrop(img, img_size)
+
+        # Salva os arquivos
+        filename_c = file_prefix_B + str(c).zfill(len(str(num_files_B))) + ".jpg"
+        cv.imwrite(dest_folder + filename_c, img_c)
 
 t2 = time.time()
 dt = t2 - t1
