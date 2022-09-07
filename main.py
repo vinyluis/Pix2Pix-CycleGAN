@@ -104,7 +104,7 @@ config.EVALUATE_EVERY_EPOCH = True  # Define se vai avaliar em cada época ou ap
 config.SAVE_CHECKPOINT = True
 config.CHECKPOINT_EPOCHS = 1
 config.KEEP_CHECKPOINTS = 1
-config.LOAD_CHECKPOINT = True
+config.LOAD_CHECKPOINT = False
 config.LOAD_SPECIFIC_CHECKPOINT = False
 config.LOAD_CKPT_EPOCH = 5
 config.SAVE_MODELS = True
@@ -132,7 +132,7 @@ SHUTDOWN_AFTER_FINISH = False  # Controla se o PC será desligado quando o códi
 
 # Código do experimento (se não houver, deixar "")
 config.exp_group = "PAINTER"
-config.exp = "MONET_E01_"
+config.exp = "01_MONET"
 
 # Modelo do gerador. Possíveis = 'pix2pix', 'unet', 'cyclegan'
 config.gen_model = 'unet'
@@ -406,7 +406,7 @@ do dataset e o valor em EVALUATE_PERCENT_OF_DATASET
 '''
 
 # Configuração dos batches sizes
-if dataset_folder == simpsons_folder:
+if dataset_folder == simpsons_folder or dataset_folder == monet_folder:
     config.METRIC_BATCH_SIZE = 5  # Não há imagens o suficiente para fazer um batch size muito grande
 
 elif dataset_folder == cars_folder or dataset_folder == cars_paired_folder or dataset_folder == cars_paired_folder_complete:
